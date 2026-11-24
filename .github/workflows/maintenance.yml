@@ -1,0 +1,25 @@
+name: Keep the publishing schedule active
+
+on:
+  schedule:
+    - cron: '19 2 * * 1'
+
+permissions:
+  contents: write
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record repository activity if the last change is over 28 days old
+        run: |
+          cutoff=$(date -u -d '28 days ago' +%s)
+          last_commit=$(git log -1 --format=%ct)
+          if [ "$last_commit" -lt "$cutoff" ]; then
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                commit --allow-empty -m 'Keep publication schedule active'
+            git push
+          fi

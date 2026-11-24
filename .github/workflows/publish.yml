@@ -1,0 +1,75 @@
+name: Publish edition
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish.yml'
+      - 'site/**'
+      - 'scripts/**'
+      - 'sources.json'
+  workflow_dispatch:
+  schedule:
+    - cron: '7,37 * * * *'
+
+permissions: {}
+
+concurrency:
+  group: fieldnote-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pages
+        uses: actions/configure-pages@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+      - uses: actions/cache@v4
+        with:
+          path: .model
+          key: argos-en-zh-1-9-433e7c4f
+      - run: python -m pip install -r scripts/requirements.txt
+      - name: Build the rolling edition
+        env:
+          PAGES_BASE: ${{ steps.pages.outputs.base_url }}
+        run: |
+          python scripts/refresh.py --model-dir .model \
+            --previous-url "${PAGES_BASE%/}/feed.json?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - uses: actions/upload-pages-artifact@v3
+        id: upload
+        with:
+          path: dist
+          retention-days: 1
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      pages: write
+      id-token: write
+      actions: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
+      - name: Remove temporary deployment artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEMP_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+        if: ${{ success() && needs.build.outputs.artifact-id != '' }}
+        continue-on-error: true
+        run: gh api --method DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${TEMP_ARTIFACT_ID}"
