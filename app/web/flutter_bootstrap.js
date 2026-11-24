@@ -7,10 +7,8 @@ _flutter.loader.load({
     try {
       const runner = await engineInitializer.initializeEngine();
       await runner.runApp();
-      document.getElementById('loading')?.remove();
     } catch {
-      const loader = document.getElementById('loading');
-      if (loader?.firstElementChild) loader.firstElementChild.textContent = '简报台暂时无法打开';
+      window.fieldnoteLoadError();
     }
   },
-});
+}).catch(window.fieldnoteLoadError);

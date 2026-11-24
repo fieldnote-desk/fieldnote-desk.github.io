@@ -23,7 +23,6 @@ class _ArticleCardState extends State<ArticleCard>
     with AutomaticKeepAliveClientMixin {
   bool expanded = false;
   bool waiting = false;
-  bool checked = false;
   Translation? browserTranslation;
   Article get article => widget.article;
   Publisher get publisher => widget.publisher;
@@ -34,19 +33,22 @@ class _ArticleCardState extends State<ArticleCard>
   Future<void> toggleTranslation() async {
     setState(() => expanded = !expanded);
     updateKeepAlive();
-    if (!expanded || checked || waiting) return;
+    if (expanded) await loadTranslation();
+  }
+
+  Future<void> loadTranslation() async {
+    if (browserTranslation != null || waiting) return;
     setState(() => waiting = true);
     final translated = await translateInBrowser(article);
     if (!mounted) return;
     setState(() {
       waiting = false;
-      checked = true;
       browserTranslation = translated;
     });
   }
 
   Widget translationPanel(ColorScheme colors) {
-    final translation = browserTranslation;
+    final translation = browserTranslation ?? article.translation;
     return Container(
       key: ValueKey(article.url),
       width: double.infinity,
@@ -62,7 +64,7 @@ class _ArticleCardState extends State<ArticleCard>
         ),
         borderRadius: BorderRadius.circular(11),
       ),
-      child: waiting
+      child: waiting && translation == null
           ? const Row(
               children: [
                 SizedBox(
@@ -71,14 +73,14 @@ class _ArticleCardState extends State<ArticleCard>
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
                 SizedBox(width: 9),
-                Text('浏览器正在翻译…'),
+                Text('正在翻译…'),
               ],
             )
           : translation == null
           ? TextButton.icon(
-              onPressed: () => openLink(browserTranslationLink(article)),
-              icon: const Icon(Icons.open_in_new, size: 15),
-              label: const Text('在 Google 翻译中打开'),
+              onPressed: loadTranslation,
+              icon: const Icon(Icons.refresh, size: 15),
+              label: const Text('本站暂未提供译文 · 重试'),
             )
           : SelectionArea(
               child: Column(

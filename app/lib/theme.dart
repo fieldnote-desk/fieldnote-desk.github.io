@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'platform.dart';
 
 const _themePreference = 'fieldnote-palette-v2';
+const _darkPreference = 'fieldnote-dark-mode';
 const _colorPreference = 'fieldnote-custom-color';
 
 class Palette {
@@ -10,6 +11,8 @@ class Palette {
   final String name;
   final Color seed;
   final bool dark;
+
+  Palette withDark(bool value) => Palette(id, name, seed, dark: value);
 }
 
 const palettes = [
@@ -33,20 +36,24 @@ String hexColor(Color color) =>
 
 Palette currentPalette() {
   final selected = readPreference(_themePreference);
+  final dark = readPreference(_darkPreference) == 'true';
   if (selected == 'custom') {
     final color = parseHex(readPreference(_colorPreference) ?? '');
-    if (color != null) return Palette('custom', '自定义', color);
+    if (color != null) return Palette('custom', '自定义', color, dark: dark);
   }
-  return palettes.firstWhere(
-    (palette) => palette.id == selected,
-    orElse: () => palettes.first,
-  );
+  return palettes
+      .firstWhere(
+        (palette) => palette.id == selected,
+        orElse: () => palettes.first,
+      )
+      .withDark(dark);
 }
 
 void rememberPalette(Palette palette) {
   if (palette.id == 'custom')
     writePreference(_colorPreference, hexColor(palette.seed));
   writePreference(_themePreference, palette.id);
+  writePreference(_darkPreference, palette.dark.toString());
 }
 
 ThemeData fieldnoteTheme(Palette palette) {
@@ -55,10 +62,10 @@ ThemeData fieldnoteTheme(Palette palette) {
     brightness: palette.dark ? Brightness.dark : Brightness.light,
   );
   final colorScheme = colors.copyWith(
-    surface: palette.dark ? const Color(0xff191820) : const Color(0xfffdfefb),
-    onSurface: palette.dark ? const Color(0xfff3eff5) : const Color(0xff212723),
+    surface: palette.dark ? colors.surface : const Color(0xfffdfefb),
+    onSurface: palette.dark ? colors.onSurface : const Color(0xff212723),
     surfaceContainerLowest: palette.dark
-        ? const Color(0xff22212a)
+        ? colors.surfaceContainerLow
         : Colors.white,
   );
   final paper = Color.alphaBlend(
@@ -67,7 +74,9 @@ ThemeData fieldnoteTheme(Palette palette) {
   );
   return ThemeData(
     colorScheme: colorScheme,
-    scaffoldBackgroundColor: palette.dark ? const Color(0xff15141b) : paper,
+    scaffoldBackgroundColor: palette.dark
+        ? colors.surfaceContainerLowest
+        : paper,
     fontFamily: 'Fieldnote Sans',
     useMaterial3: true,
     inputDecorationTheme: const InputDecorationTheme(
@@ -105,7 +114,7 @@ class PaletteRow extends StatelessWidget {
               selected: palette.id == selected.id,
               button: true,
               child: InkResponse(
-                onTap: () => onChanged(palette),
+                onTap: () => onChanged(palette.withDark(selected.dark)),
                 radius: 19,
                 child: SizedBox(
                   width: 32,
@@ -145,7 +154,8 @@ class PaletteRow extends StatelessWidget {
               context: context,
               builder: (_) => _CustomColor(initial: selected.seed),
             );
-            if (color != null) onChanged(Palette('custom', '自定义', color));
+            if (color != null)
+              onChanged(Palette('custom', '自定义', color, dark: selected.dark));
           },
           icon: selected.id == 'custom'
               ? Container(

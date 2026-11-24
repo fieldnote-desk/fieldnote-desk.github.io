@@ -54,6 +54,10 @@ jobs:
           flutter pub get
           flutter build web --release --pwa-strategy=none --no-web-resources-cdn --no-pub
       - run: python -m pip install -r scripts/requirements.txt
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/fieldnote-translation
+          key: bergamot-${{ hashFiles('scripts/translation.py') }}
       - name: Build the rolling edition
         env:
           PAGES_BASE: ${{ steps.pages.outputs.base_url }}
@@ -61,12 +65,10 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           NEWS_MODEL_GROK: ${{ vars.NEWS_MODEL_GROK }}
           NEWS_MODEL_CHATGPT: ${{ vars.NEWS_MODEL_CHATGPT }}
           NEWS_MODEL_GEMINI: ${{ vars.NEWS_MODEL_GEMINI }}
           NEWS_MODEL_CLAUDE: ${{ vars.NEWS_MODEL_CLAUDE }}
-          NEWS_MODEL_DEEPSEEK: ${{ vars.NEWS_MODEL_DEEPSEEK }}
         run: |
           mkdir -p dist
           cp -a app/build/web/. dist/

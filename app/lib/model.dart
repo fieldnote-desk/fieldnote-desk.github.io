@@ -3,7 +3,13 @@ const topics = ['全部报道', '中国大陆', '港澳台', '亚太', '欧洲',
 typedef Json = Map<String, dynamic>;
 
 class Edition {
-  Edition(this.updatedAt, this.windowDays, this.items, this.sources);
+  Edition(
+    this.updatedAt,
+    this.windowDays,
+    this.items,
+    this.sources,
+    this.brief,
+  );
 
   factory Edition.fromJson(Json json) {
     if (json['version'] != 1) throw const FormatException('Unexpected edition');
@@ -22,6 +28,7 @@ class Edition {
         for (final source in (json['sources'] as List).cast<Json>())
           source['id'] as String: Publisher.fromJson(source),
       },
+      json['brief'] as Json? ?? const {},
     );
   }
 
@@ -29,6 +36,22 @@ class Edition {
   final int windowDays;
   final List<Article> items;
   final Map<String, Publisher> sources;
+  final Json brief;
+
+  List<Article> get briefArticles {
+    final today = hongKong(DateTime.now());
+    final available = {
+      for (final article in items)
+        if (hongKong(article.publishedAt).year == today.year &&
+            hongKong(article.publishedAt).month == today.month &&
+            hongKong(article.publishedAt).day == today.day)
+          article.url.toString(): article,
+    };
+    return [
+      for (final link in (brief['links'] as List? ?? const []))
+        if (available[link] case final article?) article,
+    ];
+  }
 }
 
 class Article {
@@ -43,6 +66,7 @@ class Article {
     required this.kind,
     required this.full,
     required this.analysis,
+    required this.translation,
   });
 
   factory Article.fromJson(Json json) => Article(
@@ -65,6 +89,7 @@ class Article {
     kind: json['kind'] as String,
     full: json['full'] as Json?,
     analysis: (json['analysis'] as Json?)?.cast<String, String>() ?? const {},
+    translation: Translation.fromJson(json['translation'] as Json?),
   );
 
   final Uri url;
@@ -77,16 +102,14 @@ class Article {
   final String kind;
   final Json? full;
   final Map<String, String> analysis;
+  final Translation? translation;
 
-  bool get canTranslate => !lang.toLowerCase().startsWith('zh');
+  bool get canTranslate => lang == 'en' || lang == 'ja';
 
   String get analysisMaterial {
     final body = (full?['body'] as List?)?.cast<String>().join('\n\n') ?? '';
     return body.isEmpty ? summary : body;
   }
-
-  String get translationText =>
-      [title, summary].where((text) => text.isNotEmpty).join('\n\n');
 }
 
 class Publisher {
@@ -119,6 +142,19 @@ class Translation {
   final String title;
   final String summary;
   final String provider;
+
+  static Translation? fromJson(Json? json) {
+    if (json == null || json['title'] is! String) return null;
+    final provider = switch (json['provider']) {
+      'google' => 'Google 翻译',
+      _ => 'Mozilla 机器翻译',
+    };
+    return Translation(
+      json['title'] as String,
+      json['summary'] as String? ?? '',
+      provider,
+    );
+  }
 }
 
 DateTime hongKong(DateTime value) =>

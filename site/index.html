@@ -16,6 +16,8 @@
       <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>新闻简报</a>
       <div class="masthead-actions">
         <button id="theme-button" class="quiet-button" type="button" aria-haspopup="dialog">配色</button>
+        <button id="mode-button" class="quiet-button" type="button"></button>
+        <button id="brief-button" class="quiet-button" type="button" aria-haspopup="dialog">AI 分析</button>
         <button id="download" class="quiet-button" type="button">保存离线版</button>
       </div>
     </div>
@@ -68,6 +70,7 @@
   <dialog id="theme-dialog" aria-labelledby="theme-heading">
     <div class="dialog-top"><h2 id="theme-heading">版面配色</h2><button class="quiet-button" id="close-theme" type="button">关闭</button></div>
     <div class="theme-options" id="theme-options"></div>
+    <label class="custom-theme">自定义颜色 <input id="custom-theme" type="color" value="#9bd553"></label>
   </dialog>
   <dialog id="reader" aria-labelledby="reader-title">
     <div class="dialog-top"><p id="reader-source"></p><button class="quiet-button" id="close-reader" type="button">关闭</button></div>
@@ -89,6 +92,7 @@
       <select id="analysis-provider"></select>
       <p id="analysis-note" class="source-note"></p>
       <p id="analysis-text"></p>
+      <div id="analysis-highlights"></div>
       <div class="story-actions">
         <a id="analysis-open" target="_blank" rel="noopener noreferrer"></a>
         <button class="text-button" id="analysis-copy" type="button">复制分析提问</button>
@@ -99,7 +103,7 @@
   <dialog id="sources-dialog" aria-labelledby="sources-heading">
     <div class="dialog-top"><h2 id="sources-heading">媒体与更新状态</h2><button class="quiet-button" id="close-sources" type="button">关闭</button></div>
     <div class="sources-content">
-      <p class="source-note">香港时间每逢整点和半点计划抓取。手动刷新检查本站已发布的最新一期，每 30 分钟可使用一次。外文报道默认显示原文，可选择浏览器翻译。简繁体中文直接保留原文。可读全文仅收录有转载许可的文章。</p>
+      <p class="source-note">香港时间每逢整点和半点计划抓取。手动刷新检查本站已发布的最新一期，每 30 分钟可使用一次。外文报道默认显示原文，可在下方展开简体译文。简繁体中文直接保留原文。可读全文仅收录有转载许可的文章。</p>
       <div id="sources-list"></div>
     </div>
   </dialog>

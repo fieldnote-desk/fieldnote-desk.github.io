@@ -74,14 +74,6 @@ void saveOffline() {
   anchor.remove();
 }
 
-Uri browserTranslationLink(Article article) =>
-    Uri.https('translate.google.com', '/', {
-      'sl': article.lang == 'ja' ? 'ja' : 'auto',
-      'tl': 'zh-CN',
-      'text': article.translationText,
-      'op': 'translate',
-    });
-
 @JS('Translator')
 external JSObject? get _chromeTranslator;
 

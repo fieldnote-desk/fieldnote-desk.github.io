@@ -3,6 +3,7 @@ import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
 
+import 'analysis_panel.dart';
 import 'model.dart';
 import 'platform.dart';
 import 'reader.dart';
@@ -323,9 +324,9 @@ class _NewsDeskState extends State<NewsDesk>
           constraints: const BoxConstraints(maxWidth: 1190),
           child: Padding(
             padding: EdgeInsets.fromLTRB(
-              compact ? 14 : 21,
+              compact ? 9 : 21,
               8,
-              compact ? 12 : 23,
+              compact ? 8 : 23,
               7,
             ),
             child: Column(
@@ -364,12 +365,51 @@ class _NewsDeskState extends State<NewsDesk>
                       const SizedBox(width: 8),
                     ],
                     IconButton(
+                      tooltip: widget.palette.dark ? '切换日间模式' : '切换夜间模式',
+                      onPressed: () => widget.onPalette(
+                        widget.palette.withDark(!widget.palette.dark),
+                      ),
+                      icon: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: Icon(
+                          widget.palette.dark
+                              ? Icons.light_mode_outlined
+                              : Icons.dark_mode_outlined,
+                          key: ValueKey(widget.palette.dark),
+                          size: 21,
+                        ),
+                      ),
+                    ),
+                    Tooltip(
+                      message: 'AI 分析 · 今日速览',
+                      child: compact
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.auto_awesome_outlined,
+                                size: 21,
+                              ),
+                              onPressed: edition == null
+                                  ? null
+                                  : () => showBrief(context, edition!),
+                            )
+                          : TextButton.icon(
+                              icon: const Icon(
+                                Icons.auto_awesome_outlined,
+                                size: 18,
+                              ),
+                              label: const Text('AI 分析'),
+                              onPressed: edition == null
+                                  ? null
+                                  : () => showBrief(context, edition!),
+                            ),
+                    ),
+                    IconButton(
                       tooltip: '保存离线版',
                       icon: const Icon(Icons.file_download_outlined),
                       onPressed: edition == null ? null : saveOffline,
                     ),
                     const SizedBox(width: 4),
-                    refreshControl(),
+                    refreshControl(compact),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -461,7 +501,7 @@ class _NewsDeskState extends State<NewsDesk>
     );
   }
 
-  Widget refreshControl() {
+  Widget refreshControl(bool compact) {
     final colors = Theme.of(context).colorScheme;
     return Tooltip(
       message: busy
@@ -477,22 +517,33 @@ class _NewsDeskState extends State<NewsDesk>
               ? colors.primaryContainer
               : colors.secondaryContainer.withValues(alpha: .70),
         ),
-        child: TextButton.icon(
-          icon: RotationTransition(
-            turns: spin,
-            child: const Icon(Icons.refresh_rounded, size: 20),
-          ),
-          onPressed: busy ? null : manualRefresh,
-          style: TextButton.styleFrom(
-            foregroundColor: colors.onPrimaryContainer,
-            disabledForegroundColor: colors.onPrimaryContainer,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          ),
-          label: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            child: Text(busy ? '更新中' : '刷新', key: ValueKey(busy)),
-          ),
-        ),
+        child: compact
+            ? IconButton(
+                onPressed: busy ? null : manualRefresh,
+                icon: RotationTransition(
+                  turns: spin,
+                  child: const Icon(Icons.refresh_rounded, size: 20),
+                ),
+              )
+            : TextButton.icon(
+                icon: RotationTransition(
+                  turns: spin,
+                  child: const Icon(Icons.refresh_rounded, size: 20),
+                ),
+                onPressed: busy ? null : manualRefresh,
+                style: TextButton.styleFrom(
+                  foregroundColor: colors.onPrimaryContainer,
+                  disabledForegroundColor: colors.onPrimaryContainer,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                ),
+                label: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Text(busy ? '更新中' : '刷新', key: ValueKey(busy)),
+                ),
+              ),
       ),
     );
   }

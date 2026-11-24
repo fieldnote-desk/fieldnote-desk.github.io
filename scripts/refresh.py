@@ -18,7 +18,8 @@ from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 from opencc import OpenCC
 
-from news_analysis import prepare_analyses
+from news_analysis import PROVIDERS, prepare_analyses, select_daily_brief
+from translation import PROVIDER, prepare_translations
 
 ROOT = Path(__file__).resolve().parents[1]
 WINDOW = timedelta(days=7)
@@ -348,7 +349,10 @@ def make_edition(sources, previous, now):
                 topic_text = JAPAN_CHUGOKU.sub("日本西部", SIMPLIFIED.convert(original))
                 if JAPAN_CHUGOKU.search(SIMPLIFIED.convert(original)) and not MAINLAND_PATTERN.search(topic_text):
                     article["topics"] = [topic for topic in article["topics"] if topic != "中国大陆"] or ["亚太"]
-            article.pop("translation", None)
+            if article.get("translation", {}).get("provider") != PROVIDER:
+                article.pop("translation", None)
+            if "analysis" in article:
+                article["analysis"] = {key: value for key, value in article["analysis"].items() if key in PROVIDERS}
             timeline[article["url"]] = article
     jobs = [(source, url, now) for source in sources for url in source["feeds"]]
     health = {source["id"]: [] for source in sources}
@@ -370,17 +374,22 @@ def make_edition(sources, previous, now):
             previous_article.get("originalTitle") == article["originalTitle"]
             and previous_article.get("originalSummary", previous_article.get("summary")) == article["originalSummary"]
             and previous_article.get("full") == article.get("full")
-            and previous_article.get("analysis")
         ):
-            article["analysis"] = previous_article["analysis"]
+            for field_name in ("analysis", "translation"):
+                if previous_article.get(field_name):
+                    article[field_name] = previous_article[field_name]
         timeline[key] = article
     ordered = sorted(timeline.values(), key=lambda row: (row["publishedAt"], row["url"]), reverse=True)
-    prepare_analyses(ordered)
+    prepare_translations(ordered)
+    highlights, brief = select_daily_brief(ordered, now)
+    prepare_analyses(ordered, highlights, brief, previous.get("brief", {}), {
+        source["id"]: source["name"] for source in sources
+    })
     visible_sources = [
         {key: source[key] for key in ("id", "name", "region", "site", "lang", "terms", "credit", "full") if key in source}
         | {"health": health[source["id"]]} for source in sources
     ]
-    return {"version": 1, "updatedAt": iso(now), "windowDays": WINDOW.days, "items": ordered, "sources": visible_sources}
+    return {"version": 1, "updatedAt": iso(now), "windowDays": WINDOW.days, "items": ordered, "sources": visible_sources, "brief": brief}
 
 
 def build_site(edition, output, page_name="offline.html"):
