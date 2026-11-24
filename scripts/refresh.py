@@ -37,6 +37,7 @@ TOPICS = [
     ("美洲", r"美国|华盛顿|国会山|白宫|特朗普|拜登|川普|加拿大|委内瑞拉|墨西哥|巴西|古巴|哥伦比亚|秘鲁|海地|阿根廷|Trump|Washington|White House|United States|U\.S\.|\bUS\b|Wall Street|Federal Reserve|\bFed\b|Nasdaq|米国|米大統領|トランプ|ホワイトハウス|カナダ|メキシコ|ブラジル|ベネズエラ|Canada|Venezuela|Mexico|Brazil|Cuba|Colombia|Peru|Haiti|Argentina"),
 ]
 TOPICS = [(label, re.compile(pattern, re.I)) for label, pattern in TOPICS]
+MAINLAND_PATTERN = dict(TOPICS)["中国大陆"]
 NEWS = re.compile(
     r"政治|政府|议会|外交|国务院|选举|执政|军事|制裁|冲突|情报|诉讼|抗议|"
     r"芯片|军|贸易|关税|国安|禁令|逮捕|镇压|移民|恐袭|危机|灾难|援助|维和|人道|"
@@ -53,12 +54,15 @@ LIGHT = re.compile(
     r"\b(?:football|soccer|cricket|premier league|horoscope|recipe|recipes|celebrity|reality show)\b",
     re.I,
 )
+JAPAN_CHUGOKU = re.compile(
+    r"中国(?:地方|[運运][輸输]局|四国|[経经][済济][産产][業业]局|[電电]力|管区警察局|新聞|新闻)"
+)
 JAPAN_NEWS = re.compile(
     r"首相|官房長官|外相|防衛相|閣僚|国会|衆院|参院|衆議院|参議院|内閣|政府|政権|選挙|"
     r"外交|大統領|会談|首脳|条約|戦争|和平|核兵器|ミサイル|半導体|日銀|株価|相場|経済|関税|"
     r"輸出|貿易|物価|金利|日経平均|金融|景気|メガバンク|安全保障|通商|国防|防衛|海峡|制裁|停戦|"
     r"紛争|侵攻|災害|地震|テロ|サイバー攻撃|停戦|拘束|人権|裁判|会議|予算|自民|立憲|与党|野党|"
-    r"解散|国連|原発|円安|円高|賃上げ|人事|決算|企業統治|市場|規制",
+    r"解散|国連|原発|円安|円高|賃上げ|人事|決算|企業統治|市場|規制|国土交通|鉄道|交通政策",
 )
 FINANCE = re.compile(
     r"markets?|trade|tariffs?|inflation|GDP|econom|bank|bonds?|stocks?|shares?|securities|"
@@ -242,7 +246,12 @@ def to_article(source, item, now):
     simplified_title = SIMPLIFIED.convert(title)
     simplified_summary = SIMPLIFIED.convert(summary)
     classification = simplified_title + " " + simplified_summary + " " + SIMPLIFIED.convert(category)
-    matched = [topic for topic, pattern in TOPICS if pattern.search(simplified_title)]
+    topic_title = simplified_title
+    if source["lang"] == "ja":
+        # 中国地方 is Chugoku in western Japan. Keep its name intact in the display.
+        topic_title = JAPAN_CHUGOKU.sub("日本西部", topic_title)
+        classification = JAPAN_CHUGOKU.sub("日本西部", classification)
+    matched = [topic for topic, pattern in TOPICS if pattern.search(topic_title)]
     segments = urlsplit(url).path.split("/")
     if source["id"] == "wsj" and len(segments) > 2 and segments[1] == "world":
         section = REGIONAL_PATHS.get(segments[2])
@@ -334,6 +343,11 @@ def make_edition(sources, previous, now):
                 article.pop("full", None)
             old_topics = {"中国政治": "中国大陆", "俄乌与欧洲": "欧洲"}
             article["topics"] = [old_topics.get(topic, topic) for topic in article.get("topics", [])]
+            if article.get("lang") == "ja" and "中国大陆" in article["topics"]:
+                original = (article.get("originalTitle", "") + " " + article.get("originalSummary", ""))
+                topic_text = JAPAN_CHUGOKU.sub("日本西部", SIMPLIFIED.convert(original))
+                if JAPAN_CHUGOKU.search(SIMPLIFIED.convert(original)) and not MAINLAND_PATTERN.search(topic_text):
+                    article["topics"] = [topic for topic in article["topics"] if topic != "中国大陆"] or ["亚太"]
             article.pop("translation", None)
             timeline[article["url"]] = article
     jobs = [(source, url, now) for source in sources for url in source["feeds"]]
