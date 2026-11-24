@@ -24,7 +24,7 @@ const chineseTime = new Intl.DateTimeFormat("zh-CN", {
 const chineseDate = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Hong_Kong", month: "long", day: "numeric", weekday: "long",
 });
-const topicOrder = ["中国政治", "港澳台", "中东", "俄乌与欧洲", "亚太", "美洲", "国际"];
+const topicOrder = ["中国大陆", "港澳台", "亚太", "欧洲", "中东", "美洲", "国际"];
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -126,11 +126,7 @@ function articleRow(item) {
     if (translated) {
       details.append(node("p", "", translated.title), node("p", "", translated.summary));
     }
-    const url = new URL("https://translate.google.com/");
-    url.search = new URLSearchParams({
-      sl: "auto", tl: "zh-CN", text: [item.originalTitle || item.title, originalSummary].filter(Boolean).join("\n\n"), op: "translate",
-    });
-    details.append(link("Google 翻译", url.href));
+    if (!translated) details.append(node("p", "", "此条报道的 Google 译文尚未发布。"));
     content.append(details);
   }
   row.append(published, content);

@@ -31,11 +31,11 @@ DC = "{http://purl.org/dc/elements/1.1/}"
 SIMPLIFIED = OpenCC("t2s")
 TOPICS = [
     ("港澳台", r"港澳|香港|澳门|台湾|台海|两岸|台北|台积电|金门|澎湖|Taiwan|Taipei|Hong Kong|Macau|Macao|TSMC"),
-    ("中国政治", r"中国|中共|北京|习近平|中国共产党|中南海|新疆|西藏|人权|六四|中国外交|中国政府|解放军|南海|秦城|China|Chinese|Beijing|Xinjiang|Tibet|Xi Jinping|Uyghur|South China Sea"),
+    ("中国大陆", r"中国|中共|北京|习近平|中国共产党|中南海|新疆|西藏|人权|六四|中国外交|中国政府|解放军|南海|秦城|China|Chinese|Beijing|Shanghai|Shenzhen|Xinjiang|Tibet|Xi Jinping|Uyghur|South China Sea"),
     ("中东", r"中东|以色列|伊朗|加沙|巴勒斯坦|黎巴嫩|叙利亚|伊拉克|约旦|也门|阿富汗|胡塞|土耳其|沙特|中东|霍尔木兹|Middle East|Israel|Gaza|Iran|Palestin|Lebanon|Syria|Iraq|Jordan|Yemen|Afghan|Houthi|Turkey|Turkish|Saudi|Hormuz"),
-    ("俄乌与欧洲", r"乌克兰|俄罗斯|普京|泽连斯基|莫斯科|基辅|北约|欧盟|欧洲|格鲁吉亚|波兰|德国|法国|英国|Ukraine|Russia|Moscow|Kyiv|Putin|Zelensky|NATO|European Union|Europe|Georgia|Poland|Germany|France|Britain"),
-    ("亚太", r"日本|韩国|朝鲜|印度|东盟|缅甸|菲律宾|新加坡|马来西亚|印尼|越南|泰国|环太|巴基斯坦|澳大利亚|新西兰|所罗门|南亚|印太|东亚|东南亚|Japan|Korea|India|ASEAN|Myanmar|Philippines|Singapore|Malaysia|Indonesia|Vietnam|Thailand|Pakistan|Australia|New Zealand|Solomon|South Asia|Indo.Pacific|East Asia|Southeast Asia"),
-    ("美洲", r"美国|华盛顿|国会山|白宫|特朗普|拜登|川普|加拿大|委内瑞拉|墨西哥|巴西|古巴|哥伦比亚|秘鲁|海地|阿根廷|Trump|Washington|White House|United States|U\.S\.|\bUS\b|Canada|Venezuela|Mexico|Brazil|Cuba|Colombia|Peru|Haiti|Argentina"),
+    ("欧洲", r"乌克兰|俄罗斯|普京|泽连斯基|莫斯科|基辅|北约|欧盟|欧洲|格鲁吉亚|波兰|德国|法国|英国|Ukraine|Russia|Moscow|Kyiv|Putin|Zelensky|NATO|European Union|Europe|Georgia|Poland|German|France|French|Britain|British|London|Frankfurt|Spain|Italy|Brussels|\bECB\b|\bUK\b"),
+    ("亚太", r"日本|韩国|朝鲜|印度|东盟|缅甸|菲律宾|新加坡|马来西亚|印尼|越南|泰国|环太|巴基斯坦|澳大利亚|新西兰|所罗门|南亚|印太|东亚|东南亚|Japan|Korea|India|Nikkei|Tokyo|Seoul|ASEAN|Myanmar|Philippines|Singapore|Malaysia|Indonesia|Vietnam|Thailand|Pakistan|Australia|New Zealand|Solomon|South Asia|Indo.Pacific|East Asia|Southeast Asia"),
+    ("美洲", r"美国|华盛顿|国会山|白宫|特朗普|拜登|川普|加拿大|委内瑞拉|墨西哥|巴西|古巴|哥伦比亚|秘鲁|海地|阿根廷|Trump|Washington|White House|United States|U\.S\.|\bUS\b|Wall Street|Federal Reserve|\bFed\b|Nasdaq|Canada|Venezuela|Mexico|Brazil|Cuba|Colombia|Peru|Haiti|Argentina"),
 ]
 TOPICS = [(label, re.compile(pattern, re.I)) for label, pattern in TOPICS]
 NEWS = re.compile(
@@ -54,6 +54,17 @@ LIGHT = re.compile(
     r"\b(?:football|soccer|cricket|premier league|horoscope|recipe|recipes|celebrity|reality show)\b",
     re.I,
 )
+FINANCE = re.compile(
+    r"markets?|trade|tariffs?|inflation|GDP|econom|bank|bonds?|stocks?|shares?|securities|"
+    r"corporate|companies|investment|jobs|currency|rates?|policy|pension|gold|crude|"
+    r"treasur|housing|property|merger|earnings|semiconductor|chips?|revenue|funds?|"
+    r"central bank|monetary|fiscal|ai boom|sales|retailers",
+    re.I,
+)
+REGIONAL_PATHS = {
+    "china": "中国大陆", "europe": "欧洲", "middle-east": "中东",
+    "asia": "亚太", "americas": "美洲",
+}
 OPINION = re.compile(r"评论|專欄|专栏|观点|社论|社評|社评|\bopinion\b|\beditorial\b", re.I)
 THIRD_PARTY = re.compile(
     r"all rights reserved|used with permission|republish(?:ed|ing)? (?:from|with)|"
@@ -140,7 +151,7 @@ def clean_url(url, domains):
         return ""
     if not any(host == domain or host.endswith("." + domain) for domain in domains):
         return ""
-    tracking = {"fbclid", "gclid", "ocid", "at_medium", "at_campaign", "cmp", "ref", "ICID", "guccounter", "maca", "ito"}
+    tracking = {"fbclid", "gclid", "ocid", "at_medium", "at_campaign", "cmp", "ref", "ICID", "guccounter", "maca", "ito", "mod", "srnd"}
     query = [(key, value) for key, value in parse_qsl(parsed.query) if not key.startswith("utm_") and key not in tracking]
     return urlunsplit(("https", host, parsed.path.rstrip("/") or "/", urlencode(sorted(query)), ""))
 
@@ -210,6 +221,8 @@ def full_text(source, item, title):
 
 
 def to_article(source, item, now):
+    if source.get("requiredAuthor") and field(item, "author", DC + "creator").casefold() != source["requiredAuthor"].casefold():
+        return None
     url = clean_url(field(item, "link", RSS1 + "link") or atom_link(item), source["domains"])
     date = publication(item)
     raw_title = field(item, "title", RSS1 + "title", ATOM + "title")
@@ -224,13 +237,21 @@ def to_article(source, item, now):
     simplified_summary = SIMPLIFIED.convert(summary)
     classification = simplified_title + " " + simplified_summary + " " + SIMPLIFIED.convert(category)
     matched = [topic for topic, pattern in TOPICS if pattern.search(simplified_title)]
+    segments = urlsplit(url).path.split("/")
+    if source["id"] == "wsj" and len(segments) > 2 and segments[1] == "world":
+        section = REGIONAL_PATHS.get(segments[2])
+        if section and section not in matched:
+            matched.insert(0, section)
     matched += [topic for topic, pattern in TOPICS if topic not in matched and pattern.search(classification)]
-    priority = bool(set(matched) & {"中国政治", "港澳台", "中东", "俄乌与欧洲"})
+    priority = bool(set(matched) & {"中国大陆", "港澳台", "中东", "欧洲"})
     if source.get("internationalOnly") and not matched:
         return None
     if LIGHT.search(simplified_title) and not NEWS.search(simplified_title):
         return None
-    if not NEWS.search(classification) and not priority:
+    if source["scope"] == "财经":
+        if not (priority or NEWS.search(classification) or FINANCE.search(classification)):
+            return None
+    elif not NEWS.search(classification) and not priority:
         if source["scope"] != "国际" or not matched or LIGHT.search(classification):
             return None
 
@@ -298,6 +319,8 @@ def make_edition(sources, previous, now, translation_key=None):
         if source and now - WINDOW <= datetime.fromisoformat(article["publishedAt"]) <= now + timedelta(minutes=15):
             if not source.get("full"):
                 article.pop("full", None)
+            old_topics = {"中国政治": "中国大陆", "俄乌与欧洲": "欧洲"}
+            article["topics"] = [old_topics.get(topic, topic) for topic in article.get("topics", [])]
             if article.get("translation", {}).get("provider") != "google":
                 article.pop("translation", None)
             timeline[article["url"]] = article

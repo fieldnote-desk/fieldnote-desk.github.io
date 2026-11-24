@@ -1,4 +1,4 @@
-const topics = ['全部报道', '中国政治', '港澳台', '中东', '俄乌与欧洲', '亚太', '美洲', '国际'];
+const topics = ['全部报道', '中国大陆', '港澳台', '亚太', '欧洲', '中东', '美洲', '国际'];
 
 typedef Json = Map<String, dynamic>;
 
@@ -51,7 +51,16 @@ class Article {
     title: (json['originalTitle'] ?? json['title']) as String,
     summary: (json['originalSummary'] ?? json['summary']) as String,
     publishedAt: DateTime.parse(json['publishedAt'] as String),
-    topics: (json['topics'] as List).cast<String>(),
+    topics: (json['topics'] as List)
+        .cast<String>()
+        .map(
+          (topic) => switch (topic) {
+            '中国政治' => '中国大陆',
+            '俄乌与欧洲' => '欧洲',
+            _ => topic,
+          },
+        )
+        .toList(),
     lang: json['lang'] as String,
     kind: json['kind'] as String,
     full: json['full'] as Json?,

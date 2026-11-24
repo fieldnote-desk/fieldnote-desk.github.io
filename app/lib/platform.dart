@@ -34,7 +34,7 @@ Future<Edition> fetchEdition() async {
   final control = web.AbortController();
   final responseFuture = web.window
       .fetch(
-        'feed.json'.toJS,
+        'feed.json?check=${DateTime.now().millisecondsSinceEpoch ~/ 1000}'.toJS,
         web.RequestInit(
           cache: 'no-store',
           credentials: 'omit',
@@ -72,54 +72,4 @@ void saveOffline() {
   web.document.body?.appendChild(anchor);
   anchor.click();
   anchor.remove();
-}
-
-Uri googleTranslateLink(Article article) =>
-    Uri.https('translate.google.com', '/', {
-      'sl': 'auto',
-      'tl': 'zh-CN',
-      'text': article.translationText,
-      'op': 'translate',
-    });
-
-@JS('Translator')
-external JSObject? get _chromeTranslator;
-
-@JS('Translator.availability')
-external JSPromise<JSString> _availability(_LanguagePair options);
-
-@JS('Translator.create')
-external JSPromise<_Translator> _createTranslator(_LanguagePair options);
-
-extension type _LanguagePair._(JSObject _) implements JSObject {
-  external factory _LanguagePair({
-    String sourceLanguage,
-    String targetLanguage,
-  });
-}
-
-extension type _Translator._(JSObject _) implements JSObject {
-  external JSPromise<JSString> translate(String text);
-  external void destroy();
-}
-
-Future<Translation?> translateInChrome(Article article) async {
-  if (_chromeTranslator == null || article.lang != 'en') return null;
-  final options = _LanguagePair(sourceLanguage: 'en', targetLanguage: 'zh');
-  try {
-    final availability = (await _availability(options).toDart).toDart;
-    if (availability == 'unavailable') return null;
-    final translator = await _createTranslator(options).toDart;
-    try {
-      final title = (await translator.translate(article.title).toDart).toDart;
-      final summary = article.summary.isEmpty
-          ? ''
-          : (await translator.translate(article.summary).toDart).toDart;
-      return Translation(title, summary, 'Chrome 内置翻译');
-    } finally {
-      translator.destroy();
-    }
-  } catch (_) {
-    return null;
-  }
 }

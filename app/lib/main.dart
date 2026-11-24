@@ -23,7 +23,9 @@ class _FieldnoteState extends State<Fieldnote> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '简报台',
+      title: '新闻简报',
+      themeAnimationDuration: const Duration(milliseconds: 300),
+      themeAnimationCurve: Curves.easeOutCubic,
       debugShowCheckedModeBanner: false,
       theme: fieldnoteTheme(palette),
       home: NewsDesk(
@@ -46,7 +48,8 @@ class NewsDesk extends StatefulWidget {
   State<NewsDesk> createState() => _NewsDeskState();
 }
 
-class _NewsDeskState extends State<NewsDesk> {
+class _NewsDeskState extends State<NewsDesk>
+    with SingleTickerProviderStateMixin {
   static const refreshKey = 'fieldnote-last-manual-refresh';
   static const spacing = Duration(minutes: 30);
   static const retries = [20, 45, 90, 180, 360];
@@ -59,6 +62,10 @@ class _NewsDeskState extends State<NewsDesk> {
   String publisherId = '';
   bool fullOnly = false;
   String notice = '';
+  DateTime? checkedAt;
+  late final AnimationController spin;
+  Set<Uri> currentLinks = <Uri>{};
+  int pendingNewArticles = 0;
   bool busy = false;
   bool failedInitial = false;
   final Stopwatch _manualDuration = Stopwatch();
@@ -74,6 +81,10 @@ class _NewsDeskState extends State<NewsDesk> {
   @override
   void initState() {
     super.initState();
+    spin = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 740),
+    );
     visibility = ((JSAny? _) => schedule()).toJS;
     onVisibilityChange(null, visibility);
     schedule();
@@ -88,6 +99,7 @@ class _NewsDeskState extends State<NewsDesk> {
     onVisibilityChange(visibility, null);
     scroll.dispose();
     query.dispose();
+    spin.dispose();
     super.dispose();
   }
 
@@ -110,15 +122,27 @@ class _NewsDeskState extends State<NewsDesk> {
   Future<Edition> check() async {
     final result = await fetchEdition();
     if (!mounted) return result;
-    if (edition == null) {
-      setState(() {
+    setState(() {
+      checkedAt = DateTime.now().toUtc();
+      if (edition == null) {
         edition = result;
+        currentLinks = result.items.map((item) => item.url).toSet();
         failedInitial = false;
-      });
-    } else if (result.updatedAt.isAfter((pending ?? edition!).updatedAt)) {
-      setState(() => pending = result);
-    }
+      } else if (result.updatedAt.isAfter((pending ?? edition!).updatedAt)) {
+        pending = result;
+        pendingNewArticles = result.items
+            .where((item) => !currentLinks.contains(item.url))
+            .length;
+      }
+    });
     return result;
+  }
+
+  bool get staleEdition {
+    final publication = (pending ?? edition)?.updatedAt;
+    return publication != null &&
+        DateTime.now().toUtc().difference(publication) >
+            const Duration(minutes: 50);
   }
 
   Future<void> manualRefresh() async {
@@ -135,30 +159,39 @@ class _NewsDeskState extends State<NewsDesk> {
     armCooldown();
     _manualDuration.reset();
     _manualDuration.start();
+    if (!MediaQuery.disableAnimationsOf(context)) spin.repeat();
     setState(() {
       busy = true;
-      notice = '正在更新，请稍候';
+      notice = '正在检查新一期…';
     });
     var success = false;
     try {
       await check();
       success = true;
     } catch (_) {
-      // Keep the current articles during an outage.
+      // Keep the current articles during an outage and allow a retry.
+      manualAt = 0;
+      writePreference(refreshKey, '0');
+      armCooldown();
     } finally {
-      final delay = 350 - _manualDuration.elapsedMilliseconds;
+      final delay = 1050 - _manualDuration.elapsedMilliseconds;
       if (delay > 0) await Future<void>.delayed(Duration(milliseconds: delay));
       _manualDuration.stop();
-      if (mounted)
+      if (mounted) {
+        spin.stop();
+        spin.value = 0;
         setState(() {
           busy = false;
           failedInitial = !success && edition == null;
           notice = !success
-              ? '暂时无法检查更新'
-              : pending == null
-              ? '目前是最新一期'
-              : '新版已就绪';
+              ? '检查失败，点刷新重试'
+              : pending != null
+              ? '检测到新一期'
+              : staleEdition
+              ? '本次无新版，发布已延迟'
+              : '本次检查无新版';
         });
+      }
     }
   }
 
@@ -203,7 +236,9 @@ class _NewsDeskState extends State<NewsDesk> {
     if (pending == null) return;
     setState(() {
       edition = pending;
+      currentLinks = edition!.items.map((item) => item.url).toSet();
       pending = null;
+      pendingNewArticles = 0;
       if (!edition!.sources.containsKey(publisherId)) publisherId = '';
       notice = '已切换到最新一期';
     });
@@ -274,10 +309,16 @@ class _NewsDeskState extends State<NewsDesk> {
 
   Widget masthead(bool compact) {
     final colors = Theme.of(context).colorScheme;
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         color: colors.surface,
-        border: Border(bottom: BorderSide(color: colors.outlineVariant)),
+        border: Border(
+          bottom: BorderSide(
+            color: colors.outlineVariant.withValues(alpha: .75),
+          ),
+        ),
       ),
       child: Center(
         child: ConstrainedBox(
@@ -285,50 +326,56 @@ class _NewsDeskState extends State<NewsDesk> {
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               compact ? 14 : 21,
-              9,
-              compact ? 8 : 23,
-              9,
+              8,
+              compact ? 12 : 23,
+              7,
             ),
-            child: Row(
+            child: Column(
               children: [
-                Container(
-                  width: 37,
-                  height: 37,
-                  decoration: BoxDecoration(
-                    color: colors.primary,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.notes_rounded,
-                    size: 23,
-                    color: colors.onPrimary,
-                  ),
+                Row(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 260),
+                      width: 37,
+                      height: 37,
+                      decoration: BoxDecoration(
+                        color: colors.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.notes_rounded,
+                        size: 23,
+                        color: colors.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    const Text(
+                      '新闻简报',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: .2,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (!compact) ...[
+                      PaletteRow(
+                        selected: widget.palette,
+                        onChanged: widget.onPalette,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    IconButton(
+                      tooltip: '保存离线版',
+                      icon: const Icon(Icons.file_download_outlined),
+                      onPressed: edition == null ? null : saveOffline,
+                    ),
+                    const SizedBox(width: 4),
+                    refreshControl(),
+                  ],
                 ),
-                const SizedBox(width: 9),
-                Text(
-                  '简报台',
-                  style: TextStyle(
-                    color: colors.onSurface,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: .3,
-                  ),
-                ),
-                const Spacer(),
-                if (!compact) ...[
-                  PaletteRow(
-                    selected: widget.palette,
-                    onChanged: widget.onPalette,
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                IconButton(
-                  tooltip: '保存离线版',
-                  icon: const Icon(Icons.file_download_outlined),
-                  onPressed: edition == null ? null : saveOffline,
-                ),
-                const SizedBox(width: 3),
-                refreshControl(iconOnly: compact),
+                const SizedBox(height: 4),
+                publicationStatus(),
               ],
             ),
           ),
@@ -337,27 +384,118 @@ class _NewsDeskState extends State<NewsDesk> {
     );
   }
 
-  Widget refreshControl({required bool iconOnly}) {
-    final locked = remaining > 0;
-    final icon = busy
-        ? const SizedBox(
-            width: 17,
-            height: 17,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        : const Icon(Icons.refresh_rounded, size: 21);
-    final label = busy ? '正在更新' : '刷新';
-    if (iconOnly) {
-      return IconButton.filledTonal(
-        tooltip: locked && !busy ? '刷新 · 30 分钟内只能手动使用一次' : label,
-        onPressed: busy ? null : manualRefresh,
-        icon: icon,
-      );
-    }
-    return FilledButton.tonalIcon(
-      icon: icon,
-      onPressed: busy ? null : manualRefresh,
-      label: Text(label),
+  Widget publicationStatus() {
+    final colors = Theme.of(context).colorScheme;
+    final publication = (pending ?? edition)?.updatedAt;
+    final status = busy
+        ? '正在检查新一期…'
+        : pending != null
+        ? '新一期已就绪'
+        : notice.isNotEmpty
+        ? notice
+        : staleEdition
+        ? '发布已延迟'
+        : '整点、半点检查';
+    final times = [
+      if (publication != null) '发布 ${hongKongClock(publication)}',
+      if (checkedAt != null) '检查 ${hongKongClock(checkedAt!)}',
+    ].join(' · ');
+    return SizedBox(
+      height: 42,
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              liveRegion: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 210),
+                    layoutBuilder: (current, previous) => Stack(
+                      alignment: Alignment.centerLeft,
+                      children: [...previous, if (current != null) current],
+                    ),
+                    child: Text(
+                      status,
+                      key: ValueKey(status),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: staleEdition && !busy
+                            ? colors.error
+                            : colors.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (times.isNotEmpty)
+                    Text(
+                      '$times · 香港时间',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            child: pending == null
+                ? const SizedBox.shrink()
+                : TextButton(
+                    onPressed: showNewEdition,
+                    child: Text(
+                      pendingNewArticles == 0
+                          ? '查看新版'
+                          : '查看 ${pendingNewArticles} 条新报道',
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget refreshControl() {
+    final colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: busy
+          ? '正在检查新一期'
+          : remaining > 0
+          ? '每 30 分钟可手动检查一次'
+          : '手动检查新一期',
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          color: busy
+              ? colors.primaryContainer
+              : colors.secondaryContainer.withValues(alpha: .70),
+        ),
+        child: TextButton.icon(
+          icon: RotationTransition(
+            turns: spin,
+            child: const Icon(Icons.refresh_rounded, size: 20),
+          ),
+          onPressed: busy ? null : manualRefresh,
+          style: TextButton.styleFrom(
+            foregroundColor: colors.onPrimaryContainer,
+            disabledForegroundColor: colors.onPrimaryContainer,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          ),
+          label: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: Text(busy ? '更新中' : '刷新', key: ValueKey(busy)),
+          ),
+        ),
+      ),
     );
   }
 
@@ -687,13 +825,15 @@ class _NewsDeskState extends State<NewsDesk> {
           PaletteRow(selected: widget.palette, onChanged: widget.onPalette),
           const SizedBox(height: 6),
         ],
-        Container(
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
           width: double.infinity,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
                 Color.alphaBlend(
-                  colors.primary.withValues(alpha: .10),
+                  widget.palette.seed.withValues(alpha: .16),
                   colors.surface,
                 ),
                 colors.surface,
@@ -720,44 +860,32 @@ class _NewsDeskState extends State<NewsDesk> {
                 ),
               ),
               const SizedBox(height: 3),
-              Text(
-                topics[selectedTopic],
-                style: TextStyle(
-                  fontSize: compact ? 32 : 44,
-                  height: 1.25,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -.9,
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 280),
+                switchInCurve: Curves.easeOutCubic,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween(
+                      begin: const Offset(0, .12),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 36,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          notice.isNotEmpty
-                              ? notice
-                              : data == null
-                              ? '整点、半点自动更新'
-                              : '发布于 ${hongKongDate(data.updatedAt)} ${hongKongClock(data.updatedAt)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: colors.onSurfaceVariant,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (pending != null)
-                      TextButton(
-                        onPressed: showNewEdition,
-                        child: const Text('查看新版'),
-                      ),
-                  ],
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [...previous, if (current != null) current],
+                ),
+                child: Text(
+                  topics[selectedTopic],
+                  key: ValueKey(selectedTopic),
+                  style: TextStyle(
+                    fontSize: compact ? 32 : 43,
+                    height: 1.3,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -.45,
+                  ),
                 ),
               ),
             ],

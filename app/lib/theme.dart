@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'platform.dart';
 
-const _themePreference = 'fieldnote-theme';
+const _themePreference = 'fieldnote-palette-v2';
 const _colorPreference = 'fieldnote-custom-color';
 
 class Palette {
@@ -13,12 +13,13 @@ class Palette {
 }
 
 const palettes = [
-  Palette('red', '新闻红', Color(0xffb80023)),
-  Palette('navy', '深海蓝', Color(0xff245589)),
-  Palette('forest', '松林绿', Color(0xff2d6a55)),
-  Palette('plum', '霞光紫', Color(0xff7953a0)),
-  Palette('amber', '琥珀色', Color(0xffa36c28)),
-  Palette('night', '夜间', Color(0xff393045), dark: true),
+  Palette('lime', '青柠绿', Color(0xff9bd553)),
+  Palette('blue', '蓝色', Color(0xff5c97ee)),
+  Palette('yellow', '黄色', Color(0xffecc957)),
+  Palette('pink', '粉色', Color(0xffe78eb4)),
+  Palette('orange', '橙色', Color(0xffee9a57)),
+  Palette('purple', '紫色', Color(0xffa683d9)),
+  Palette('neutral', '黑白', Color(0xff717680)),
 ];
 
 Color? parseHex(String text) {
@@ -54,17 +55,19 @@ ThemeData fieldnoteTheme(Palette palette) {
     brightness: palette.dark ? Brightness.dark : Brightness.light,
   );
   final colorScheme = colors.copyWith(
-    surface: palette.dark ? const Color(0xff191820) : const Color(0xfffffdfa),
-    onSurface: palette.dark ? const Color(0xfff3eff5) : const Color(0xff242123),
+    surface: palette.dark ? const Color(0xff191820) : const Color(0xfffdfefb),
+    onSurface: palette.dark ? const Color(0xfff3eff5) : const Color(0xff212723),
     surfaceContainerLowest: palette.dark
         ? const Color(0xff22212a)
         : Colors.white,
   );
+  final paper = Color.alphaBlend(
+    palette.seed.withValues(alpha: .075),
+    const Color(0xfffcfcfa),
+  );
   return ThemeData(
     colorScheme: colorScheme,
-    scaffoldBackgroundColor: palette.dark
-        ? const Color(0xff15141b)
-        : const Color(0xfff5f3ef),
+    scaffoldBackgroundColor: palette.dark ? const Color(0xff15141b) : paper,
     fontFamily: 'Fieldnote Sans',
     useMaterial3: true,
     inputDecorationTheme: const InputDecorationTheme(
@@ -108,9 +111,11 @@ class PaletteRow extends StatelessWidget {
                   width: 32,
                   height: 40,
                   child: Center(
-                    child: Container(
-                      width: 23,
-                      height: 23,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 240),
+                      curve: Curves.easeOutCubic,
+                      width: palette.id == selected.id ? 25 : 21,
+                      height: palette.id == selected.id ? 25 : 21,
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,

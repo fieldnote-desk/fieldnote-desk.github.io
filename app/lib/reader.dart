@@ -21,82 +21,56 @@ class ArticleCard extends StatefulWidget {
 class _ArticleCardState extends State<ArticleCard>
     with AutomaticKeepAliveClientMixin {
   bool expanded = false;
-  bool waiting = false;
-  bool checkedChrome = false;
-  Translation? cached;
   Article get article => widget.article;
   Publisher get publisher => widget.publisher;
 
   @override
-  bool get wantKeepAlive => expanded || cached != null;
+  bool get wantKeepAlive => expanded;
 
-  Future<void> toggleTranslation() async {
+  void toggleTranslation() {
     setState(() => expanded = !expanded);
-    updateKeepAlive();
-    if (!expanded || article.translation != null || checkedChrome || waiting)
-      return;
-    setState(() => waiting = true);
-    final result = await translateInChrome(article);
-    if (!mounted) return;
-    setState(() {
-      cached = result;
-      checkedChrome = true;
-      waiting = false;
-    });
     updateKeepAlive();
   }
 
   Widget translationPanel(ColorScheme colors) {
-    final translation = article.translation ?? cached;
+    final translation = article.translation;
     return Container(
-      margin: const EdgeInsets.only(top: 8),
+      key: ValueKey(article.url),
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 6, bottom: 3),
       padding: const EdgeInsets.fromLTRB(14, 11, 14, 10),
       decoration: BoxDecoration(
-        color: colors.primaryContainer.withValues(alpha: .35),
+        color: colors.primaryContainer.withValues(alpha: .38),
         border: Border(
           left: BorderSide(
             color: colors.primary.withValues(alpha: .55),
             width: 2,
           ),
         ),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(11),
       ),
-      child: waiting
-          ? const Row(
-              children: [
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                SizedBox(width: 10),
-                Text('正在翻译…'),
-              ],
+      child: translation == null
+          ? Text(
+              '此条报道的 Google 译文尚未发布。',
+              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
             )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (translation != null) ...[
-                  SelectionArea(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          translation.title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            height: 1.45,
-                          ),
-                        ),
-                        if (translation.summary.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(translation.summary),
-                          ),
-                      ],
+          : SelectionArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    translation.title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      height: 1.48,
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  if (translation.summary.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(translation.summary),
+                    ),
+                  const SizedBox(height: 6),
                   Text(
                     translation.provider,
                     style: TextStyle(
@@ -104,13 +78,8 @@ class _ArticleCardState extends State<ArticleCard>
                       fontSize: 12,
                     ),
                   ),
-                ] else
-                  TextButton.icon(
-                    onPressed: () => openLink(googleTranslateLink(article)),
-                    icon: const Icon(Icons.open_in_new, size: 15),
-                    label: const Text('在 Google 翻译中打开'),
-                  ),
-              ],
+                ],
+              ),
             ),
     );
   }
@@ -258,7 +227,17 @@ class _ArticleCardState extends State<ArticleCard>
                       ),
                   ],
                 ),
-                if (expanded) translationPanel(colors),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 230),
+                    child: expanded
+                        ? translationPanel(colors)
+                        : const SizedBox.shrink(),
+                  ),
+                ),
               ],
             ),
           ),

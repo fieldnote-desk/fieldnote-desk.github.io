@@ -11,7 +11,8 @@ on:
       - 'sources.json'
   workflow_dispatch:
   schedule:
-    - cron: '0,30 * * * *'
+    - cron: '*/30 * * * *'
+      timezone: Asia/Hong_Kong
 
 permissions: {}
 
