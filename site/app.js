@@ -14,11 +14,15 @@ const stories = byId("stories");
 const loadMore = byId("load-more");
 const reader = byId("reader");
 const sourcesDialog = byId("sources-dialog");
+const themeDialog = byId("theme-dialog");
+const refreshButton = byId("refresh");
+const refreshNote = byId("refresh-note");
+const showEdition = byId("show-edition");
 const chineseTime = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  timeZone: "Asia/Hong_Kong", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
 });
 const chineseDate = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: "Asia/Shanghai", month: "long", day: "numeric", weekday: "long",
+  timeZone: "Asia/Hong_Kong", month: "long", day: "numeric", weekday: "long",
 });
 const topicOrder = ["中国政治", "港澳台", "中东", "俄乌与欧洲", "亚太", "美洲", "国际"];
 
@@ -149,13 +153,7 @@ function render() {
   const matching = topic ? eligible.filter((item) => item.topics.includes(topic)) : eligible;
   byId("feed-heading").textContent = topic || "全部报道";
   byId("result-count").textContent = matching.length + " 条报道";
-  const lastUpdate = new Date(edition.updatedAt);
-  const stale = Date.now() - lastUpdate.getTime() > 90 * 60 * 1000;
-  const update = byId("update-time");
-  update.textContent = (location.protocol === "file:" || stale ? "快照 " : "更新 ") +
-    chineseDate.format(lastUpdate).replace(/星期[一二三四五六日]/, "").trim() + " " +
-    chineseTime.format(lastUpdate);
-  update.title = "北京时间";
+  renderEditionTime();
   renderTopics(eligible);
   loadMore.hidden = visible >= matching.length;
   if (!matching.length) {
@@ -175,6 +173,16 @@ function render() {
     groups[groups.length - 1].append(articleRow(item));
   }
   stories.replaceChildren(...groups);
+}
+
+function renderEditionTime() {
+  const lastUpdate = new Date(edition.updatedAt);
+  const update = byId("update-time");
+  update.textContent = (location.protocol === "file:" ? "快照 " : "发布 ") +
+    chineseDate.format(lastUpdate).replace(/星期[一二三四五六日]/, "").trim() + " " +
+    chineseTime.format(lastUpdate);
+  update.title = "香港时间";
+  update.dateTime = edition.updatedAt;
 }
 
 function renderPublishers() {
@@ -217,28 +225,189 @@ function saveEdition() {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
-let lastCheck = Date.now();
-async function checkForEdition() {
-  if (!["http:", "https:"].includes(location.protocol) || Date.now() - lastCheck < 4 * 60 * 1000) return;
-  lastCheck = Date.now();
+const themes = [
+  { id: "red", label: "新闻红", swatch: "#b80000" },
+  { id: "navy", label: "海军蓝", swatch: "#175472" },
+  { id: "forest", label: "森林绿", swatch: "#17654b" },
+  { id: "plum", label: "梅子紫", swatch: "#713b83" },
+  { id: "night", label: "夜间", swatch: "#28283d" },
+];
+const themeKey = "fieldnote-theme";
+const refreshKey = "fieldnote-last-manual-refresh";
+const halfHour = 30 * 60 * 1000;
+const retryDelays = [20, 45, 90, 180, 360];
+const isOnlinePage = location.protocol === "https:" || location.protocol === "http:";
+let pendingEdition;
+let manualInProgress = false;
+let lastManual = Number(readPreference(refreshKey)) || 0;
+let cooldownTimer;
+let activeSlot;
+let slotTimer;
+let retryTimer;
+let autoDeferred = false;
+
+function readPreference(key) {
   try {
-    const response = await fetch("./feed.json", { cache: "no-store", credentials: "omit" });
-    if (!response.ok) return;
-    const next = await response.json();
-    if (next.version !== 1 || next.updatedAt <= edition.updatedAt) return;
-    edition = next;
-    renderPublishers();
-    render();
+    return localStorage.getItem(key);
   } catch {
-    // The current edition remains readable during an outage.
+    return null;
   }
+}
+
+function savePreference(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // The current tab still works when storage is disabled.
+  }
+}
+
+function setTheme(theme, remember = false) {
+  const selected = themes.some((option) => option.id === theme) ? theme : "red";
+  document.documentElement.dataset.theme = selected;
+  if (remember) savePreference(themeKey, selected);
+  for (const button of byId("theme-options").children) {
+    const active = button.dataset.theme === selected;
+    button.setAttribute("aria-pressed", String(active));
+    button.lastElementChild.textContent = active ? "已选" : "";
+  }
+}
+
+function buildThemeChooser() {
+  const buttons = themes.map((theme) => {
+    const button = node("button", "theme-option");
+    button.type = "button";
+    button.dataset.theme = theme.id;
+    const swatch = node("span", "swatch");
+    swatch.setAttribute("aria-hidden", "true");
+    swatch.style.setProperty("--swatch", theme.swatch);
+    const selected = node("span", "theme-selected");
+    selected.setAttribute("aria-hidden", "true");
+    button.append(swatch, node("span", "", theme.label), selected);
+    button.addEventListener("click", () => setTheme(theme.id, true));
+    return button;
+  });
+  byId("theme-options").replaceChildren(...buttons);
+  setTheme(readPreference(themeKey));
+}
+
+async function checkForEdition() {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch("./feed.json", { cache: "no-store", credentials: "omit", signal: controller.signal });
+    if (!response.ok) throw new Error("The edition could not be fetched");
+    const next = await response.json();
+    if (next.version !== 1 || !Number.isFinite(Date.parse(next.updatedAt)) ||
+        !Array.isArray(next.items) || !Array.isArray(next.sources)) {
+      throw new Error("The edition has an unexpected format");
+    }
+    if (next.updatedAt > (pendingEdition || edition).updatedAt) {
+      pendingEdition = next;
+      showEdition.hidden = false;
+    }
+    return Date.parse(next.updatedAt);
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
+function updateRefreshButton() {
+  clearTimeout(cooldownTimer);
+  const remaining = lastManual + halfHour - Date.now();
+  const locked = !isOnlinePage || manualInProgress || remaining > 0;
+  refreshButton.setAttribute("aria-disabled", String(locked));
+  refreshButton.setAttribute("aria-busy", String(manualInProgress));
+  refreshButton.classList.toggle("is-refreshing", manualInProgress);
+  if (remaining > 0) cooldownTimer = setTimeout(updateRefreshButton, remaining + 50);
+  else if (refreshNote.dataset.cooldown) {
+    delete refreshNote.dataset.cooldown;
+    refreshNote.textContent = "整点、半点自动更新";
+  }
+}
+
+async function manualRefresh() {
+  if (!isOnlinePage || manualInProgress) return;
+  // Re-read the shared timestamp before issuing a request from another tab.
+  lastManual = Math.max(lastManual, Number(readPreference(refreshKey)) || 0);
+  const remaining = lastManual + halfHour - Date.now();
+  if (remaining > 0) {
+    refreshNote.dataset.cooldown = "true";
+    refreshNote.textContent = "约 " + Math.ceil(remaining / 60000) + " 分钟后可再次刷新";
+    updateRefreshButton();
+    return;
+  }
+  lastManual = Date.now();
+  savePreference(refreshKey, String(lastManual));
+  manualInProgress = true;
+  delete refreshNote.dataset.cooldown;
+  refreshNote.textContent = "正在更新，请稍候";
+  updateRefreshButton();
+  try {
+    await checkForEdition();
+    refreshNote.textContent = pendingEdition ? "新版已就绪" : "已检查，目前是最新一期";
+  } catch {
+    refreshNote.textContent = "暂时无法检查更新";
+  } finally {
+    manualInProgress = false;
+    updateRefreshButton();
+  }
+}
+
+function openPendingEdition() {
+  if (!pendingEdition || reader.open || sourcesDialog.open || themeDialog.open) return;
+  edition = pendingEdition;
+  pendingEdition = undefined;
+  delete refreshNote.dataset.cooldown;
+  refreshNote.textContent = "已切换到最新一期";
+  refreshButton.focus({ preventScroll: true });
+  showEdition.hidden = true;
+  renderPublishers();
+  render();
+}
+
+async function autoRefresh(slot, retry = 0) {
+  if (activeSlot !== slot) return;
+  if (document.hidden) {
+    autoDeferred = true;
+    return;
+  }
+  try {
+    const updated = await checkForEdition();
+    if (updated >= slot) return;
+  } catch {
+    // Keep the current list available while the next publication is pending.
+  }
+  if (activeSlot === slot && retry < retryDelays.length) {
+    const wait = Math.max(0, slot + retryDelays[retry] * 1000 - Date.now());
+    retryTimer = setTimeout(() => void autoRefresh(slot, retry + 1), wait);
+  }
+}
+
+function scheduleAutoRefresh() {
+  if (!isOnlinePage) return;
+  clearTimeout(slotTimer);
+  const now = Date.now();
+  // Hong Kong is UTC+8 throughout the year. Epoch half-hours align with local :00 and :30.
+  const slot = Math.floor(now / halfHour) * halfHour;
+  if (!document.hidden && (slot !== activeSlot || autoDeferred)) {
+    clearTimeout(retryTimer);
+    activeSlot = slot;
+    autoDeferred = false;
+    void autoRefresh(slot);
+  }
+  slotTimer = setTimeout(scheduleAutoRefresh, slot + halfHour - now);
 }
 
 if (window.matchMedia("(max-width: 760px)").matches) byId("filters").open = false;
 byId("sources-button").addEventListener("click", () => sourcesDialog.showModal());
 byId("close-sources").addEventListener("click", () => sourcesDialog.close());
 byId("close-reader").addEventListener("click", () => reader.close());
+byId("theme-button").addEventListener("click", () => themeDialog.showModal());
+byId("close-theme").addEventListener("click", () => themeDialog.close());
 byId("download").addEventListener("click", saveEdition);
+refreshButton.addEventListener("click", () => void manualRefresh());
+showEdition.addEventListener("click", openPendingEdition);
 search.addEventListener("input", applyFilters);
 sourceFilter.addEventListener("change", applyFilters);
 fullFilter.addEventListener("change", applyFilters);
@@ -252,17 +421,20 @@ loadMore.addEventListener("click", () => {
     firstNewStory.focus();
   }
 });
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    render();
-    void checkForEdition();
+document.addEventListener("visibilitychange", scheduleAutoRefresh);
+window.addEventListener("storage", (event) => {
+  if (event.key === themeKey) setTheme(event.newValue);
+  if (event.key === refreshKey) {
+    lastManual = Number(event.newValue) || 0;
+    updateRefreshButton();
   }
 });
-setInterval(() => {
-  if (!document.hidden) {
-    render();
-    void checkForEdition();
-  }
-}, 5 * 60 * 1000);
+if (!isOnlinePage) {
+  refreshButton.hidden = true;
+  refreshNote.textContent = "离线快照";
+}
+buildThemeChooser();
+updateRefreshButton();
 renderPublishers();
 render();
+scheduleAutoRefresh();

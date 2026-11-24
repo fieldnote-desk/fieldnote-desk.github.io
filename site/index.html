@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="light dark">
   <meta name="robots" content="noindex, noarchive">
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
@@ -13,9 +13,9 @@
 <body>
   <header class="masthead">
     <div class="masthead-inner">
-      <a class="brand" href="#top">简报台</a>
+      <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>简报台</a>
       <div class="masthead-actions">
-        <span id="update-time" class="masthead-time"></span>
+        <button id="theme-button" class="quiet-button" type="button" aria-haspopup="dialog">配色</button>
         <button id="download" class="quiet-button" type="button">保存离线版</button>
       </div>
     </div>
@@ -36,13 +36,25 @@
     <section class="feed" aria-labelledby="feed-heading">
       <div class="feed-intro">
         <div>
-          <p class="edition-label">最近七天 · 北京时间</p>
+          <p class="edition-label">最近七天 <span aria-hidden="true">·</span> 香港时间</p>
           <h1 id="feed-heading">全部报道</h1>
         </div>
         <label class="search">
           <span class="visually-hidden">搜索报道</span>
           <input id="search" type="search" placeholder="搜索标题、摘要或媒体" spellcheck="false" autocomplete="off">
         </label>
+      </div>
+      <div class="edition-controls">
+        <div class="edition-actions">
+          <button id="refresh" class="refresh-button" type="button" aria-describedby="refresh-note">
+            <span class="refresh-icon" aria-hidden="true"></span><span>刷新</span>
+          </button>
+          <time id="update-time"></time>
+        </div>
+        <div class="edition-feedback">
+          <span id="refresh-note" role="status" aria-live="polite">整点、半点自动更新</span>
+          <button id="show-edition" class="new-edition" type="button" hidden>查看新版</button>
+        </div>
       </div>
       <div class="feed-status">
         <span id="result-count" role="status"></span>
@@ -53,7 +65,11 @@
       <noscript><p class="empty">请启用 JavaScript 以浏览报道。</p></noscript>
     </section>
   </main>
-  <dialog id="reader">
+  <dialog id="theme-dialog" aria-labelledby="theme-heading">
+    <div class="dialog-top"><h2 id="theme-heading">版面配色</h2><button class="quiet-button" id="close-theme" type="button">关闭</button></div>
+    <div class="theme-options" id="theme-options"></div>
+  </dialog>
+  <dialog id="reader" aria-labelledby="reader-title">
     <div class="dialog-top"><p id="reader-source"></p><button class="quiet-button" id="close-reader" type="button">关闭</button></div>
     <article class="reader-content" aria-labelledby="reader-title">
       <h2 id="reader-title"></h2>
@@ -64,7 +80,7 @@
   <dialog id="sources-dialog" aria-labelledby="sources-heading">
     <div class="dialog-top"><h2 id="sources-heading">媒体与更新状态</h2><button class="quiet-button" id="close-sources" type="button">关闭</button></div>
     <div class="sources-content">
-      <p class="source-note">每半小时尝试更新。英文标题和摘要由本地模型翻译，内容以媒体原文为准。可读全文仅收录有转载许可的文章。</p>
+      <p class="source-note">香港时间每逢整点和半点计划抓取。手动刷新检查本站已发布的最新一期，每 30 分钟可使用一次。英文标题和摘要由本地模型翻译，内容以媒体原文为准。可读全文仅收录有转载许可的文章。</p>
       <div id="sources-list"></div>
     </div>
   </dialog>

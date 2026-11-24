@@ -10,7 +10,7 @@ on:
       - 'sources.json'
   workflow_dispatch:
   schedule:
-    - cron: '7,37 * * * *'
+    - cron: '0,30 * * * *'
 
 permissions: {}
 
