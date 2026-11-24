@@ -3,6 +3,24 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { runInThisContext } = require('node:vm');
 
+// The Japanese model sometimes reads “168万” as “168 million”.
+function correctJapaneseTenThousands(original, pivot) {
+  const source = original.normalize('NFKC');
+  const counts = new Map();
+  const numbers = /([\d,.]+)\s*(万億|万兆|万|億|兆)/gu;
+  for (const match of source.matchAll(numbers)) {
+    if (match[2] !== '万' || /[兆億万\d]/u.test(source[match.index - 1] ?? '')) continue;
+    const number = Number(match[1].replaceAll(',', ''));
+    if (!Number.isFinite(number) || number <= 0) continue;
+    counts.set(number, `${number / 100} million`);
+  }
+  return pivot.replace(/([\d,.]+)\s*million\b/giu, (phrase, digits) => {
+    const number = Number(digits.replaceAll(',', ''));
+    if (counts.has(number * 100) || !counts.has(number)) return phrase;
+    return ` ${counts.get(number)}`;
+  });
+}
+
 async function main(directory) {
   const read = name => readFileSync(join(directory, name));
   const load = runInThisContext(read('bergamot-translator.js').toString() + '\nloadBergamot');
@@ -42,29 +60,39 @@ async function main(directory) {
   const japanese = input.ja.length ? model('ja', 'en', 'jaen', ['vocab.jaen.spm']) : null;
   const output = { en: [], ja: [] };
 
+  function translate(model, texts) {
+    const messages = new bergamot.VectorString();
+    const options = new bergamot.VectorResponseOptions();
+    let replies;
+    try {
+      for (const text of texts) {
+        messages.push_back(text);
+        options.push_back({ qualityScores: false, alignment: true, html: false });
+      }
+      replies = service.translate(model, messages, options);
+      const translated = [];
+      for (let i = 0; i < replies.size(); i++) {
+        const response = replies.get(i);
+        try { translated.push(response.getTranslatedText()); }
+        finally { response.delete(); }
+      }
+      return translated;
+    } finally {
+      replies?.delete();
+      messages.delete();
+      options.delete();
+    }
+  }
+
   for (const [language, texts] of Object.entries(input)) {
     for (let start = 0; start < texts.length; start += 24) {
-      const messages = new bergamot.VectorString();
-      const options = new bergamot.VectorResponseOptions();
-      let replies;
-      try {
-        for (const text of texts.slice(start, start + 24)) {
-          messages.push_back(text);
-          options.push_back({ qualityScores: false, alignment: true, html: false });
-        }
-        replies = language === 'ja'
-          ? service.translateViaPivoting(japanese, english, messages, options)
-          : service.translate(english, messages, options);
-        for (let i = 0; i < replies.size(); i++) {
-          const response = replies.get(i);
-          try { output[language].push(response.getTranslatedText()); }
-          finally { response.delete(); }
-        }
-      } finally {
-        replies?.delete();
-        messages.delete();
-        options.delete();
-      }
+      const batch = texts.slice(start, start + 24);
+      const englishText = language === 'ja'
+        ? translate(japanese, batch).map((pivot, i) => correctJapaneseTenThousands(batch[i], pivot))
+        : batch;
+      // A failed pivot can be empty; Bergamot requires a nonempty input.
+      const translated = translate(english, englishText.map(text => text.trim() || '…'));
+      output[language].push(...translated);
     }
   }
   process.stdout.write(JSON.stringify(output));

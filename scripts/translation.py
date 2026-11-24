@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 from urllib.request import urlopen
 
-PROVIDER = "mozilla-bergamot-en2.2-ja2.1"
+PROVIDER = "mozilla-bergamot-en2.2-ja2.1-numbers"
 MOZILLA_ASSETS = "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/"
 # The glue and WebAssembly load together. Model versions match Firefox Remote Settings.
 FILES = {
