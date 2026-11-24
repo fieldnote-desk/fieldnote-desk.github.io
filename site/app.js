@@ -100,16 +100,14 @@ function articleRow(item) {
   const meta = node("div", "story-meta");
   meta.append(node("span", "publisher", source.name), node("span", "", item.topics.join(" · ")));
   if (item.kind === "评论") meta.append(node("span", "", "评论"));
-  const translated = item.translation;
-  const title = node("h3", "", translated?.title || item.title);
-  if (item.lang === "en") {
-    if (translated) title.title = item.originalTitle;
-    else title.lang = "en";
-  }
+  const translated = item.translation?.provider === "google" ? item.translation : null;
+  const title = node("h3", "", item.originalTitle || item.title);
+  if (item.lang === "en") title.lang = "en";
   content.append(meta, title);
-  if (translated?.summary || item.summary) {
-    const summary = node("p", "", translated?.summary || item.summary);
-    if (!translated?.summary && item.lang === "en") summary.lang = "en";
+  const originalSummary = item.originalSummary ?? item.summary;
+  if (originalSummary) {
+    const summary = node("p", "", originalSummary);
+    if (item.lang === "en") summary.lang = "en";
     content.append(summary);
   }
   const actions = node("div", "story-actions");
@@ -120,9 +118,21 @@ function articleRow(item) {
     actions.append(button);
   }
   actions.append(link("查看原文", item.url));
-  if (translated) actions.append(node("span", "", "机器翻译"));
   if (source.credit) actions.append(node("span", "", source.credit));
   content.append(actions);
+  if (item.lang === "en") {
+    const details = node("details");
+    details.append(node("summary", "text-button", "翻译"));
+    if (translated) {
+      details.append(node("p", "", translated.title), node("p", "", translated.summary));
+    }
+    const url = new URL("https://translate.google.com/");
+    url.search = new URLSearchParams({
+      sl: "auto", tl: "zh-CN", text: [item.originalTitle || item.title, originalSummary].filter(Boolean).join("\n\n"), op: "translate",
+    });
+    details.append(link("Google 翻译", url.href));
+    content.append(details);
+  }
   row.append(published, content);
   return row;
 }

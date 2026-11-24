@@ -2,3 +2,6 @@
 /.model/
 /.venv/
 __pycache__/
+/app/.dart_tool/
+/app/build/
+/app/assets/FieldnoteSans.ttf

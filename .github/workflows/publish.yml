@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/publish.yml'
       - 'site/**'
+      - 'app/**'
       - 'scripts/**'
       - 'sources.json'
   workflow_dispatch:
@@ -21,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 14
+    timeout-minutes: 24
     permissions:
       contents: read
       pages: read
@@ -37,15 +38,30 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/requirements.txt
       - uses: actions/cache@v4
+        id: flutter-web
         with:
-          path: .model
-          key: argos-en-zh-1-9-433e7c4f
+          path: app/build/web
+          key: flutter-web-3.50.1-${{ hashFiles('app/lib/**', 'app/web/**', 'app/pubspec.*', 'scripts/web-assets.sh') }}
+      - name: Build the Flutter site
+        if: steps.flutter-web.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch 3.50.1 https://github.com/flutter/flutter.git "$RUNNER_TEMP/fieldnote-flutter"
+          bash scripts/web-assets.sh
+          export PATH="$RUNNER_TEMP/fieldnote-flutter/bin:$PATH"
+          export FLUTTER_SUPPRESS_ANALYTICS=true
+          cd app
+          flutter pub get
+          flutter build web --release --pwa-strategy=none --no-web-resources-cdn --no-pub
       - run: python -m pip install -r scripts/requirements.txt
       - name: Build the rolling edition
         env:
           PAGES_BASE: ${{ steps.pages.outputs.base_url }}
+          GOOGLE_TRANSLATE_API_KEY: ${{ secrets.GOOGLE_TRANSLATE_API_KEY }}
         run: |
-          python scripts/refresh.py --model-dir .model \
+          mkdir -p dist
+          cp -a app/build/web/. dist/
+          cp app/assets/OFL.txt dist/font-license.txt
+          python scripts/refresh.py \
             --previous-url "${PAGES_BASE%/}/feed.json?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
       - uses: actions/upload-pages-artifact@v3
         id: upload

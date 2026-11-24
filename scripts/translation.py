@@ -1,51 +1,48 @@
-"""Optional local English-to-Chinese translation using the Argos model."""
+"""Translate published titles and summaries through Google Cloud Translation Basic."""
 
-import hashlib
-import shutil
+from html import unescape
+import json
 from urllib.request import Request, urlopen
-from zipfile import ZipFile
 
-MODEL_URL = "https://argos-net.com/v1/translate-en_zh-1_9.argosmodel"
-MODEL_HASH = "433e7c4f034d87fbe2353161e05f18646d7999452f801a4e1f0378522b9850ab"
-MODEL_DIRECTORY = "translate-en_zh-1_9"
+GOOGLE_TRANSLATE = "https://translation.googleapis.com/language/translate/v2"
 
 
-def install(directory):
-    directory.mkdir(parents=True, exist_ok=True)
-    target = directory / MODEL_DIRECTORY
-    if (target / "model" / "model.bin").is_file() and (target / "sentencepiece.model").is_file():
-        return target
-    archive = directory / "model.download"
+def google_translate(texts, key):
+    payload = json.dumps({"q": texts, "source": "en", "target": "zh-CN", "format": "text"})
+    request = Request(
+        GOOGLE_TRANSLATE, data=payload.encode("utf-8"),
+        headers={"Content-Type": "application/json", "X-Goog-Api-Key": key},
+    )
+    with urlopen(request, timeout=15) as response:
+        items = json.load(response)["data"]["translations"]
+    if len(items) != len(texts):
+        raise ValueError("Unexpected translation response length")
+    return [unescape(item["translatedText"]) for item in items]
+
+
+def translate_english(items, key, budget):
+    if not key or budget <= 0:
+        return
+    selected = []
+    remaining = budget
+    for item in items:
+        if item["lang"] != "en" or item.get("translation"):
+            continue
+        title = item.get("originalTitle", item["title"])
+        summary = item.get("originalSummary", item["summary"])
+        length = len(title) + len(summary)
+        if length <= remaining:
+            selected.append((item, title, summary))
+            remaining -= length
     try:
-        request = Request(MODEL_URL, headers={"User-Agent": "FieldnoteDesk/1.0"})
-        with urlopen(request, timeout=30) as response, archive.open("wb") as output:
-            shutil.copyfileobj(response, output)
-        with archive.open("rb") as contents:
-            if hashlib.file_digest(contents, "sha256").hexdigest() != MODEL_HASH:
-                raise ValueError("The translation model checksum differs from the pinned release")
-        with ZipFile(archive) as package:
-            package.extractall(directory)
-    finally:
-        archive.unlink(missing_ok=True)
-    return target
-
-
-class Translator:
-    def __init__(self, directory):
-        import ctranslate2
-        import sentencepiece
-
-        model = install(directory)
-        self.tokens = sentencepiece.SentencePieceProcessor(
-            model_file=str(model / "sentencepiece.model")
-        )
-        self.model = ctranslate2.Translator(
-            str(model / "model"), device="cpu", compute_type="int8", intra_threads=2
-        )
-
-    def translate(self, text):
-        encoded = self.tokens.encode(text, out_type=str)
-        results = self.model.translate_batch(
-            encoded, beam_size=2, max_batch_size=24, max_decoding_length=175
-        )
-        return [self.tokens.decode(result.hypotheses[0]) for result in results]
+        for start in range(0, len(selected), 40):
+            batch = selected[start:start + 40]
+            texts = [text for _, title, summary in batch for text in (title, summary) if text]
+            translated = iter(google_translate(texts, key))
+            for item, original_title, original_summary in batch:
+                title = next(translated) if original_title else ""
+                summary = next(translated) if original_summary else ""
+                if title:
+                    item["translation"] = {"provider": "google", "title": title, "summary": summary}
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        print(f"Google Cloud Translation unavailable ({type(error).__name__}); retaining originals.")

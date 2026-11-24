@@ -7,6 +7,7 @@ from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
 import json
+import os
 from pathlib import Path
 import re
 from urllib.error import HTTPError
@@ -18,7 +19,7 @@ from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 from opencc import OpenCC
 
-from translation import Translator
+from translation import translate_english
 
 ROOT = Path(__file__).resolve().parents[1]
 WINDOW = timedelta(days=7)
@@ -237,7 +238,7 @@ def to_article(source, item, now):
         "url": url, "publishedAt": iso(date), "source": source["id"],
         "title": simplified_title, "summary": simplified_summary, "topics": matched[:3] or ["国际"],
         "kind": "评论" if OPINION.search(simplified_title + " " + category) else "报道",
-        "lang": source["lang"], "originalTitle": title,
+        "lang": source["lang"], "originalTitle": title, "originalSummary": summary,
     }
     revised = field(item, "lastUpdated", ATOM + "updated")
     if revised:
@@ -289,26 +290,7 @@ def previous_edition(url, path):
         raise
 
 
-def translate_english(items, directory):
-    pending = [item for item in items if item["lang"] == "en" and not item.get("translation")]
-    if not pending or not directory:
-        return
-    try:
-        translator = Translator(directory)
-        for start in range(0, len(pending), 40):
-            batch = pending[start:start + 40]
-            texts = [text for item in batch for text in (item["title"], item["summary"]) if text]
-            translated = iter(translator.translate(texts))
-            for item in batch:
-                title = next(translated)
-                summary = next(translated) if item["summary"] else ""
-                if re.search(r"[\u3400-\u9fff]", title):
-                    item["translation"] = {"title": title, "summary": summary}
-    except (OSError, RuntimeError, ValueError, ImportError) as error:
-        print(f"Local translation unavailable ({type(error).__name__}); retaining publisher language.")
-
-
-def make_edition(sources, previous, now, model_dir):
+def make_edition(sources, previous, now, translation_key=None):
     source_by_id = {source["id"]: source for source in sources}
     timeline = {}
     for article in previous.get("items", []):
@@ -316,6 +298,8 @@ def make_edition(sources, previous, now, model_dir):
         if source and now - WINDOW <= datetime.fromisoformat(article["publishedAt"]) <= now + timedelta(minutes=15):
             if not source.get("full"):
                 article.pop("full", None)
+            if article.get("translation", {}).get("provider") != "google":
+                article.pop("translation", None)
             timeline[article["url"]] = article
     jobs = [(source, url, now) for source in sources for url in source["feeds"]]
     health = {source["id"]: [] for source in sources}
@@ -338,7 +322,7 @@ def make_edition(sources, previous, now, model_dir):
                 article["translation"] = previous_article["translation"]
         timeline[key] = article
     ordered = sorted(timeline.values(), key=lambda row: (row["publishedAt"], row["url"]), reverse=True)
-    translate_english(ordered, model_dir)
+    translate_english(ordered, translation_key, budget=600)
     visible_sources = [
         {key: source[key] for key in ("id", "name", "region", "site", "lang", "terms", "credit", "full") if key in source}
         | {"health": health[source["id"]]} for source in sources
@@ -346,7 +330,7 @@ def make_edition(sources, previous, now, model_dir):
     return {"version": 1, "updatedAt": iso(now), "windowDays": WINDOW.days, "items": ordered, "sources": visible_sources}
 
 
-def build_site(edition, output):
+def build_site(edition, output, page_name="offline.html"):
     output.mkdir(parents=True, exist_ok=True)
     base = ROOT / "site"
     data = json.dumps(edition, ensure_ascii=False, separators=(",", ":"))
@@ -358,7 +342,7 @@ def build_site(edition, output):
     html = html.replace("<!--STYLE-->", f"<style>{css}</style>")
     html = html.replace("<!--DATA-->", f'<script id="edition" type="application/json">{safe}</script>')
     html = html.replace("<!--SCRIPT-->", f"<script>{js}</script>")
-    (output / "index.html").write_text(html, encoding="utf-8")
+    (output / page_name).write_text(html, encoding="utf-8")
 
 
 def main():
@@ -366,11 +350,10 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--previous", type=Path)
     parser.add_argument("--previous-url")
-    parser.add_argument("--model-dir", type=Path)
     args = parser.parse_args()
     sources = json.loads((ROOT / "sources.json").read_text(encoding="utf-8"))
     previous = previous_edition(args.previous_url, args.previous)
-    edition = make_edition(sources, previous, datetime.now(timezone.utc), args.model_dir)
+    edition = make_edition(sources, previous, datetime.now(timezone.utc), os.environ.get("GOOGLE_TRANSLATE_API_KEY"))
     healthy = sum(any(not feed["error"] for feed in source["health"]) for source in edition["sources"])
     if healthy == 0 and not previous:
         raise SystemExit("No publisher feed responded, so there is no edition to publish.")

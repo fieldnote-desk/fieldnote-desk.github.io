@@ -1,0 +1,16 @@
+name: fieldnote_desk
+description: A public news timeline.
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  web: ^1.1.1
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Fieldnote Sans
+      fonts:
+        - asset: assets/FieldnoteSans.ttf
