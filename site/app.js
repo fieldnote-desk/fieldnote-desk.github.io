@@ -100,14 +100,13 @@ function articleRow(item) {
   const meta = node("div", "story-meta");
   meta.append(node("span", "publisher", source.name), node("span", "", item.topics.join(" · ")));
   if (item.kind === "评论") meta.append(node("span", "", "评论"));
-  const translated = item.translation?.provider === "google" ? item.translation : null;
   const title = node("h3", "", item.originalTitle || item.title);
-  if (item.lang === "en") title.lang = "en";
+  title.lang = item.lang;
   content.append(meta, title);
   const originalSummary = item.originalSummary ?? item.summary;
   if (originalSummary) {
     const summary = node("p", "", originalSummary);
-    if (item.lang === "en") summary.lang = "en";
+    summary.lang = item.lang;
     content.append(summary);
   }
   const actions = node("div", "story-actions");
@@ -119,18 +118,83 @@ function articleRow(item) {
   }
   actions.append(link("查看原文", item.url));
   if (source.credit) actions.append(node("span", "", source.credit));
+  const analysis = node("button", "text-button analysis-action", "AI 分析");
+  analysis.type = "button";
+  analysis.addEventListener("click", () => openAnalysis(item, source));
+  actions.append(analysis);
   content.append(actions);
-  if (item.lang === "en") {
+  if (!item.lang.toLowerCase().startsWith("zh")) {
     const details = node("details");
     details.append(node("summary", "text-button", "翻译"));
-    if (translated) {
-      details.append(node("p", "", translated.title), node("p", "", translated.summary));
-    }
-    if (!translated) details.append(node("p", "", "此条报道的 Google 译文尚未发布。"));
+    const url = new URL("https://translate.google.com/");
+    const material = [item.originalTitle || item.title, originalSummary].filter(Boolean).join("\n\n");
+    url.search = new URLSearchParams({sl: item.lang, tl: "zh-CN", text: material, op: "translate"});
+    const translated = node("p", "", "");
+    details.append(translated, link("在 Google 翻译中打开", url.href));
+    details.addEventListener("toggle", async () => {
+      if (!details.open || translated.dataset.attempted || !window.Translator) return;
+      translated.dataset.attempted = "true";
+      try {
+        const options = {sourceLanguage: item.lang, targetLanguage: "zh"};
+        const model = await window.Translator.create(options);
+        try { translated.textContent = await model.translate(material); }
+        finally { model.destroy(); }
+      } catch { /* The link remains available on browsers without a usable model. */ }
+    });
     content.append(details);
   }
   row.append(published, content);
   return row;
+}
+
+const analysisProviders = [
+  ["grok", "Grok", "https://grok.com/"],
+  ["chatgpt", "ChatGPT", "https://chatgpt.com/"],
+  ["gemini", "Gemini", "https://gemini.google.com/app"],
+  ["claude", "Claude", "https://claude.ai/new"],
+  ["deepseek", "DeepSeek", "https://chat.deepseek.com/"],
+];
+
+function openAnalysis(item, source) {
+  const select = byId("analysis-provider");
+  const notes = item.originalSummary ?? item.summary;
+  const authorizedText = item.full?.body?.join("\n\n");
+  const prompt = "用简体中文分析以下新闻，概述事实和不确定性，只参考提供的资料。\n\n" +
+    source.name + " · " + (item.originalTitle || item.title) + "\n" + item.url + "\n" +
+    ((authorizedText || notes || "来源仅提供标题").slice(0, 12000));
+  byId("analysis-title").textContent = item.originalTitle || item.title;
+  byId("analysis-source").textContent = source.name;
+  select.replaceChildren(...analysisProviders.map(([id, name]) => new Option(name, id)));
+  byId("analysis-prompt").hidden = true;
+  byId("analysis-prompt").value = prompt;
+  const copy = byId("analysis-copy");
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      copy.textContent = "已复制提问";
+    } catch {
+      byId("analysis-prompt").hidden = false;
+      byId("analysis-prompt").select();
+    }
+  }
+  function selectProvider() {
+    const [id, name, base] = analysisProviders.find(([id]) => id === select.value);
+    const result = item.analysis?.[id];
+    byId("analysis-note").textContent = result ? name + " 分析 · 依据媒体资料" : name + " 暂无站内分析 · 以下来自媒体";
+    byId("analysis-text").textContent = result || notes || item.full?.body?.[0] || "来源只提供标题。";
+    const external = byId("analysis-open");
+    const url = new URL(base);
+    const prefill = (id === "grok" || id === "chatgpt") && prompt.length < 1600;
+    if (prefill) url.searchParams.set("q", prompt);
+    external.href = url.href;
+    external.textContent = "打开 " + name;
+    external.onclick = prefill ? null : () => void copyPrompt();
+    copy.textContent = "复制分析提问";
+  }
+  copy.onclick = copyPrompt;
+  select.onchange = selectProvider;
+  selectProvider();
+  byId("analysis-dialog").showModal();
 }
 
 function openArticle(item, source) {
@@ -409,6 +473,7 @@ if (window.matchMedia("(max-width: 760px)").matches) byId("filters").open = fals
 byId("sources-button").addEventListener("click", () => sourcesDialog.showModal());
 byId("close-sources").addEventListener("click", () => sourcesDialog.close());
 byId("close-reader").addEventListener("click", () => reader.close());
+byId("close-analysis").addEventListener("click", () => byId("analysis-dialog").close());
 byId("theme-button").addEventListener("click", () => themeDialog.showModal());
 byId("close-theme").addEventListener("click", () => themeDialog.close());
 byId("download").addEventListener("click", saveEdition);

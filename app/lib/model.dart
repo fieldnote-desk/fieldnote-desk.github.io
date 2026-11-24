@@ -42,7 +42,7 @@ class Article {
     required this.lang,
     required this.kind,
     required this.full,
-    required this.translation,
+    required this.analysis,
   });
 
   factory Article.fromJson(Json json) => Article(
@@ -64,7 +64,7 @@ class Article {
     lang: json['lang'] as String,
     kind: json['kind'] as String,
     full: json['full'] as Json?,
-    translation: Translation.fromJson(json['translation'] as Json?),
+    analysis: (json['analysis'] as Json?)?.cast<String, String>() ?? const {},
   );
 
   final Uri url;
@@ -76,7 +76,14 @@ class Article {
   final String lang;
   final String kind;
   final Json? full;
-  final Translation? translation;
+  final Map<String, String> analysis;
+
+  bool get canTranslate => !lang.toLowerCase().startsWith('zh');
+
+  String get analysisMaterial {
+    final body = (full?['body'] as List?)?.cast<String>().join('\n\n') ?? '';
+    return body.isEmpty ? summary : body;
+  }
 
   String get translationText =>
       [title, summary].where((text) => text.isNotEmpty).join('\n\n');
@@ -109,15 +116,6 @@ class Publisher {
 
 class Translation {
   const Translation(this.title, this.summary, this.provider);
-  static Translation? fromJson(Json? json) {
-    if (json == null || json['provider'] != 'google') return null;
-    return Translation(
-      json['title'] as String,
-      json['summary'] as String,
-      'Google 翻译',
-    );
-  }
-
   final String title;
   final String summary;
   final String provider;

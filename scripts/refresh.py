@@ -7,7 +7,6 @@ from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
 import json
-import os
 from pathlib import Path
 import re
 from urllib.error import HTTPError
@@ -19,7 +18,7 @@ from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 from opencc import OpenCC
 
-from translation import translate_english
+from news_analysis import prepare_analyses
 
 ROOT = Path(__file__).resolve().parents[1]
 WINDOW = timedelta(days=7)
@@ -30,12 +29,12 @@ CONTENT = "{http://purl.org/rss/1.0/modules/content/}encoded"
 DC = "{http://purl.org/dc/elements/1.1/}"
 SIMPLIFIED = OpenCC("t2s")
 TOPICS = [
-    ("港澳台", r"港澳|香港|澳门|台湾|台海|两岸|台北|台积电|金门|澎湖|Taiwan|Taipei|Hong Kong|Macau|Macao|TSMC"),
-    ("中国大陆", r"中国|中共|北京|习近平|中国共产党|中南海|新疆|西藏|人权|六四|中国外交|中国政府|解放军|南海|秦城|China|Chinese|Beijing|Shanghai|Shenzhen|Xinjiang|Tibet|Xi Jinping|Uyghur|South China Sea"),
-    ("中东", r"中东|以色列|伊朗|加沙|巴勒斯坦|黎巴嫩|叙利亚|伊拉克|约旦|也门|阿富汗|胡塞|土耳其|沙特|中东|霍尔木兹|Middle East|Israel|Gaza|Iran|Palestin|Lebanon|Syria|Iraq|Jordan|Yemen|Afghan|Houthi|Turkey|Turkish|Saudi|Hormuz"),
-    ("欧洲", r"乌克兰|俄罗斯|普京|泽连斯基|莫斯科|基辅|北约|欧盟|欧洲|格鲁吉亚|波兰|德国|法国|英国|Ukraine|Russia|Moscow|Kyiv|Putin|Zelensky|NATO|European Union|Europe|Georgia|Poland|German|France|French|Britain|British|London|Frankfurt|Spain|Italy|Brussels|\bECB\b|\bUK\b"),
-    ("亚太", r"日本|韩国|朝鲜|印度|东盟|缅甸|菲律宾|新加坡|马来西亚|印尼|越南|泰国|环太|巴基斯坦|澳大利亚|新西兰|所罗门|南亚|印太|东亚|东南亚|Japan|Korea|India|Nikkei|Tokyo|Seoul|ASEAN|Myanmar|Philippines|Singapore|Malaysia|Indonesia|Vietnam|Thailand|Pakistan|Australia|New Zealand|Solomon|South Asia|Indo.Pacific|East Asia|Southeast Asia"),
-    ("美洲", r"美国|华盛顿|国会山|白宫|特朗普|拜登|川普|加拿大|委内瑞拉|墨西哥|巴西|古巴|哥伦比亚|秘鲁|海地|阿根廷|Trump|Washington|White House|United States|U\.S\.|\bUS\b|Wall Street|Federal Reserve|\bFed\b|Nasdaq|Canada|Venezuela|Mexico|Brazil|Cuba|Colombia|Peru|Haiti|Argentina"),
+    ("港澳台", r"港澳|香港|澳门|マカオ|台湾|臺灣|台海|台湾海峡|两岸|台北|台积电|金门|澎湖|Taiwan|Taipei|Hong Kong|Macau|Macao|TSMC"),
+    ("中国大陆", r"中国|中共|北京|习近平|中国共产党|中南海|新疆|西藏|人权|六四|中国外交|中国政府|解放军|南海|秦城|中国政府|中国共産党|習近平|China|Chinese|Beijing|Shanghai|Shenzhen|Xinjiang|Tibet|Xi Jinping|Uyghur|South China Sea"),
+    ("中东", r"中东|以色列|伊朗|加沙|巴勒斯坦|黎巴嫩|叙利亚|伊拉克|约旦|也门|阿富汗|胡塞|土耳其|沙特|中东|霍尔木兹|中東|イスラエル|パレスチナ|イラン|レバノン|ヨルダン|シリア|イラク|トルコ|ホルムズ|Middle East|Israel|Gaza|Iran|Palestin|Lebanon|Syria|Iraq|Jordan|Yemen|Afghan|Houthi|Turkey|Turkish|Saudi|Hormuz"),
+    ("欧洲", r"乌克兰|俄罗斯|普京|泽连斯基|莫斯科|基辅|北约|欧盟|欧洲|格鲁吉亚|波兰|德国|法国|英国|Ukraine|Russia|Moscow|Kyiv|Putin|Zelensky|NATO|European Union|Europe|Georgia|Poland|German|France|French|Britain|British|ウクライナ|ロシア|ゼレンスキー|プーチン|モスクワ|ドイツ|フランス|イギリス|欧州|London|Frankfurt|Spain|Italy|Brussels|\bECB\b|\bUK\b"),
+    ("亚太", r"日本|韩国|朝鲜|印度|东盟|缅甸|菲律宾|新加坡|马来西亚|印尼|越南|泰国|环太|巴基斯坦|澳大利亚|新西兰|所罗门|南亚|印太|东亚|东南亚|フィリピン|シンガポール|パキスタン|インド|モンゴル|オーストラリア|Japan|Korea|India|Nikkei|Tokyo|Seoul|ASEAN|Myanmar|Philippines|Singapore|Malaysia|Indonesia|Vietnam|Thailand|Pakistan|Australia|New Zealand|Solomon|South Asia|Indo.Pacific|East Asia|Southeast Asia"),
+    ("美洲", r"美国|华盛顿|国会山|白宫|特朗普|拜登|川普|加拿大|委内瑞拉|墨西哥|巴西|古巴|哥伦比亚|秘鲁|海地|阿根廷|Trump|Washington|White House|United States|U\.S\.|\bUS\b|Wall Street|Federal Reserve|\bFed\b|Nasdaq|米国|米大統領|トランプ|ホワイトハウス|カナダ|メキシコ|ブラジル|ベネズエラ|Canada|Venezuela|Mexico|Brazil|Cuba|Colombia|Peru|Haiti|Argentina"),
 ]
 TOPICS = [(label, re.compile(pattern, re.I)) for label, pattern in TOPICS]
 NEWS = re.compile(
@@ -53,6 +52,13 @@ LIGHT = re.compile(
     r"体育|娱乐|旅游指南|美食|影评|赛事|星座|游戏攻略|跑分|折扣|开箱|影剧|片单|食谱|"
     r"\b(?:football|soccer|cricket|premier league|horoscope|recipe|recipes|celebrity|reality show)\b",
     re.I,
+)
+JAPAN_NEWS = re.compile(
+    r"首相|官房長官|外相|防衛相|閣僚|国会|衆院|参院|衆議院|参議院|内閣|政府|政権|選挙|"
+    r"外交|大統領|会談|首脳|条約|戦争|和平|核兵器|ミサイル|半導体|日銀|株価|相場|経済|関税|"
+    r"輸出|貿易|物価|金利|日経平均|金融|景気|メガバンク|安全保障|通商|国防|防衛|海峡|制裁|停戦|"
+    r"紛争|侵攻|災害|地震|テロ|サイバー攻撃|停戦|拘束|人権|裁判|会議|予算|自民|立憲|与党|野党|"
+    r"解散|国連|原発|円安|円高|賃上げ|人事|決算|企業統治|市場|規制",
 )
 FINANCE = re.compile(
     r"markets?|trade|tariffs?|inflation|GDP|econom|bank|bonds?|stocks?|shares?|securities|"
@@ -119,7 +125,7 @@ def short_summary(raw, title, lang):
         )
     ]
     text = " ".join(useful)
-    limit = 170 if lang == "zh" else 235
+    limit = 170 if lang in {"zh", "ja"} else 235
     if len(text) <= limit:
         return text
     opening = text[:limit]
@@ -246,9 +252,14 @@ def to_article(source, item, now):
     priority = bool(set(matched) & {"中国大陆", "港澳台", "中东", "欧洲"})
     if source.get("internationalOnly") and not matched:
         return None
-    if LIGHT.search(simplified_title) and not NEWS.search(simplified_title):
+    if source["lang"] != "ja" and LIGHT.search(simplified_title) and not NEWS.search(simplified_title):
         return None
-    if source["scope"] == "财经":
+    if source["scope"] == "日本":
+        if not (JAPAN_NEWS.search(title + " " + summary + " " + category) or priority):
+            return None
+        if not matched:
+            matched = ["亚太"]
+    elif source["scope"] == "财经":
         if not (priority or NEWS.search(classification) or FINANCE.search(classification)):
             return None
     elif not NEWS.search(classification) and not priority:
@@ -282,6 +293,8 @@ def fetch_source(source, url, now):
         else:
             raise ValueError("unrecognized feed")
         articles = [article for item in items if (article := to_article(source, item, now))]
+        if source["scope"] == "日本":
+            articles = sorted(articles, key=lambda article: article["publishedAt"], reverse=True)[:35]
         newest = max((date for item in items if (date := publication(item))), default=None)
         return source["id"], url, articles, newest, None
     except (OSError, ValueError, ParseError, DefusedXmlException) as error:
@@ -311,7 +324,7 @@ def previous_edition(url, path):
         raise
 
 
-def make_edition(sources, previous, now, translation_key=None):
+def make_edition(sources, previous, now):
     source_by_id = {source["id"]: source for source in sources}
     timeline = {}
     for article in previous.get("items", []):
@@ -321,8 +334,7 @@ def make_edition(sources, previous, now, translation_key=None):
                 article.pop("full", None)
             old_topics = {"中国政治": "中国大陆", "俄乌与欧洲": "欧洲"}
             article["topics"] = [old_topics.get(topic, topic) for topic in article.get("topics", [])]
-            if article.get("translation", {}).get("provider") != "google":
-                article.pop("translation", None)
+            article.pop("translation", None)
             timeline[article["url"]] = article
     jobs = [(source, url, now) for source in sources for url in source["feeds"]]
     health = {source["id"]: [] for source in sources}
@@ -340,12 +352,16 @@ def make_edition(sources, previous, now, translation_key=None):
                 fetched[key] = article
     for key, article in fetched.items():
         previous_article = timeline.get(key, {})
-        if previous_article.get("title") == article["title"] and previous_article.get("summary") == article["summary"]:
-            if previous_article.get("translation"):
-                article["translation"] = previous_article["translation"]
+        if (
+            previous_article.get("originalTitle") == article["originalTitle"]
+            and previous_article.get("originalSummary", previous_article.get("summary")) == article["originalSummary"]
+            and previous_article.get("full") == article.get("full")
+            and previous_article.get("analysis")
+        ):
+            article["analysis"] = previous_article["analysis"]
         timeline[key] = article
     ordered = sorted(timeline.values(), key=lambda row: (row["publishedAt"], row["url"]), reverse=True)
-    translate_english(ordered, translation_key, budget=600)
+    prepare_analyses(ordered)
     visible_sources = [
         {key: source[key] for key in ("id", "name", "region", "site", "lang", "terms", "credit", "full") if key in source}
         | {"health": health[source["id"]]} for source in sources
@@ -376,7 +392,7 @@ def main():
     args = parser.parse_args()
     sources = json.loads((ROOT / "sources.json").read_text(encoding="utf-8"))
     previous = previous_edition(args.previous_url, args.previous)
-    edition = make_edition(sources, previous, datetime.now(timezone.utc), os.environ.get("GOOGLE_TRANSLATE_API_KEY"))
+    edition = make_edition(sources, previous, datetime.now(timezone.utc))
     healthy = sum(any(not feed["error"] for feed in source["health"]) for source in edition["sources"])
     if healthy == 0 and not previous:
         raise SystemExit("No publisher feed responded, so there is no edition to publish.")

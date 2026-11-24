@@ -12,7 +12,7 @@
 
 ## 来源与转载
 
-从 `sources.json` 列明的官方 RSS 和授权转载频道获取报道。路透社只收录 Investing.com 订阅中明确署名 Reuters 的稿件。按文章提及的地区放入已有栏目。RSS 暂时故障时保留未过期的报道。所有标题和摘要默认显示原文。非中文条目的「翻译」仅展开已发布的 Google Cloud Translation 译文。如果尚无译文，页面在原文下方显示状态。简报依据媒体发布的 RSS 摘要裁剪，只有标题的源也只显示标题。
+从 `sources.json` 列明的官方 RSS 和授权转载频道获取报道。路透社只收录 Investing.com 订阅中明确署名 Reuters 的稿件。按文章提及的地区放入已有栏目。RSS 暂时故障时保留未过期的报道。所有标题和摘要默认显示原文。非中文报道可在原文下方尝试浏览器内置翻译。浏览器未提供翻译模型时，提供打开 Google 翻译的备用入口。简体和繁体新闻均直接显示原文。日本媒体包括 NHK、朝日新闻、每日新闻、时事通信、TBS 和 FNN。简报依据媒体发布的 RSS 摘要裁剪，只有标题的源也只显示标题。
 
 正文仅取两类满足条件的官方订阅条目：自由亚洲电台 RSS 中有明确记者署名的原稿，以及没有合作伙伴转载标记的 Global Voices 自有稿件。正文保留原语种，署名、条款和原文链接在站内标示。图像、视频、嵌入及第三方稿件均不复制。来源使用条款变更时，更新 `sources.json` 中的 `full` 授权配置，或移除来源。
 
@@ -20,6 +20,8 @@
 
 使用 Python 3.12 和 Flutter 3.50.1。从项目目录执行 `bash scripts/web-assets.sh`，然后在 `app/` 内执行 `flutter pub get` 和 `flutter build web --release --pwa-strategy=none --no-web-resources-cdn`。将 `app/build/web` 的内容复制到 `dist`。安装 `scripts/requirements.txt` 后运行 `python scripts/refresh.py`，用 HTTP 服务打开 `dist/`，也可以直接打开 `dist/offline.html`。已有上期数据可使用 `--previous path/to/feed.json` 合并七天内的条目。
 
-## Google 翻译
+## AI 分析
 
-已发布的站内译文使用 [Google Cloud Translation](https://cloud.google.com/translate)。可在 GitHub 仓库的 **Settings → Secrets and variables → Actions** 添加 `GOOGLE_TRANSLATE_API_KEY`。需要先在 Google Cloud 项目启用 Cloud Translation API，并自行设置费用与用量限制。密钥仅传入发布工作流，不写入页面或快照。每次构建最多翻译 600 个字符，优先处理新稿件，并沿用未过期的既有谷歌译文。
+每条报道均可打开右侧分析面板，默认选择 Grok。支持 Grok、ChatGPT、Gemini、Claude 和 DeepSeek。已生成的分析直接随新闻快照发布。没有生成分析时，面板显示媒体原文提要，并可复制提问或前往相应的官方服务。只处理已授权的正文或 RSS 中的标题和摘要。
+
+站内自动分析可使用仓库 **Settings → Secrets and variables → Actions** 中的 `XAI_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`、`ANTHROPIC_API_KEY` 或 `DEEPSEEK_API_KEY`。没有配置相应密钥时，发布任务不调用该服务。每个已启用的服务在单次构建最多分析四条报道。已生成的分析随对应新闻滚动保留。可通过同页变量 `NEWS_MODEL_GROK` 等覆盖模型名。

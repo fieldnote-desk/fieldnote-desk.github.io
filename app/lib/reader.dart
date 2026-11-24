@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'analysis_panel.dart';
 import 'model.dart';
 import 'platform.dart';
 
@@ -21,19 +22,31 @@ class ArticleCard extends StatefulWidget {
 class _ArticleCardState extends State<ArticleCard>
     with AutomaticKeepAliveClientMixin {
   bool expanded = false;
+  bool waiting = false;
+  bool checked = false;
+  Translation? browserTranslation;
   Article get article => widget.article;
   Publisher get publisher => widget.publisher;
 
   @override
   bool get wantKeepAlive => expanded;
 
-  void toggleTranslation() {
+  Future<void> toggleTranslation() async {
     setState(() => expanded = !expanded);
     updateKeepAlive();
+    if (!expanded || checked || waiting) return;
+    setState(() => waiting = true);
+    final translated = await translateInBrowser(article);
+    if (!mounted) return;
+    setState(() {
+      waiting = false;
+      checked = true;
+      browserTranslation = translated;
+    });
   }
 
   Widget translationPanel(ColorScheme colors) {
-    final translation = article.translation;
+    final translation = browserTranslation;
     return Container(
       key: ValueKey(article.url),
       width: double.infinity,
@@ -49,10 +62,23 @@ class _ArticleCardState extends State<ArticleCard>
         ),
         borderRadius: BorderRadius.circular(11),
       ),
-      child: translation == null
-          ? Text(
-              '此条报道的 Google 译文尚未发布。',
-              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
+      child: waiting
+          ? const Row(
+              children: [
+                SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 9),
+                Text('浏览器正在翻译…'),
+              ],
+            )
+          : translation == null
+          ? TextButton.icon(
+              onPressed: () => openLink(browserTranslationLink(article)),
+              icon: const Icon(Icons.open_in_new, size: 15),
+              label: const Text('在 Google 翻译中打开'),
             )
           : SelectionArea(
               child: Column(
@@ -201,7 +227,7 @@ class _ArticleCardState extends State<ArticleCard>
                   runSpacing: 2,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    if (article.lang != 'zh')
+                    if (article.canTranslate)
                       TextButton.icon(
                         onPressed: toggleTranslation,
                         icon: const Icon(Icons.translate, size: 15),
@@ -226,6 +252,21 @@ class _ArticleCardState extends State<ArticleCard>
                         ),
                       ),
                   ],
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => showAnalysis(context, article, publisher),
+                    icon: const Icon(Icons.auto_awesome_outlined, size: 14),
+                    style: TextButton.styleFrom(
+                      textStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    label: const Text('AI 分析'),
+                  ),
                 ),
                 AnimatedSize(
                   duration: const Duration(milliseconds: 280),

@@ -268,8 +268,6 @@ class _NewsDeskState extends State<NewsDesk>
         article.title,
         article.summary,
         data.sources[article.publisher]?.name ?? '',
-        article.translation?.title ?? '',
-        article.translation?.summary ?? '',
         ...article.topics,
       ].join(' ').toLowerCase();
       return words.every(content.contains);

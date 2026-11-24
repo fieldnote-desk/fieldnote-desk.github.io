@@ -73,3 +73,58 @@ void saveOffline() {
   anchor.click();
   anchor.remove();
 }
+
+Uri browserTranslationLink(Article article) =>
+    Uri.https('translate.google.com', '/', {
+      'sl': article.lang == 'ja' ? 'ja' : 'auto',
+      'tl': 'zh-CN',
+      'text': article.translationText,
+      'op': 'translate',
+    });
+
+@JS('Translator')
+external JSObject? get _chromeTranslator;
+
+@JS('Translator.availability')
+external JSPromise<JSString> _translatorAvailability(_LanguagePair options);
+
+@JS('Translator.create')
+external JSPromise<_Translator> _createTranslator(_LanguagePair options);
+
+extension type _LanguagePair._(JSObject _) implements JSObject {
+  external factory _LanguagePair({
+    String sourceLanguage,
+    String targetLanguage,
+  });
+}
+
+extension type _Translator._(JSObject _) implements JSObject {
+  external JSPromise<JSString> translate(String text);
+  external void destroy();
+}
+
+Future<Translation?> translateInBrowser(Article article) async {
+  if (_chromeTranslator == null || !article.canTranslate) return null;
+  final options = _LanguagePair(
+    sourceLanguage: article.lang,
+    targetLanguage: 'zh',
+  );
+  try {
+    final availability = (await _translatorAvailability(options).toDart).toDart;
+    if (availability == 'unavailable') return null;
+    final translator = await _createTranslator(
+      options,
+    ).toDart.timeout(const Duration(seconds: 40));
+    try {
+      final title = (await translator.translate(article.title).toDart).toDart;
+      final summary = article.summary.isEmpty
+          ? ''
+          : (await translator.translate(article.summary).toDart).toDart;
+      return Translation(title, summary, '浏览器翻译');
+    } finally {
+      translator.destroy();
+    }
+  } catch (_) {
+    return null;
+  }
+}

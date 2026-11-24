@@ -77,10 +77,29 @@
       <div id="reader-body"></div>
     </article>
   </dialog>
+  <dialog id="analysis-dialog" aria-labelledby="analysis-heading">
+    <div class="dialog-top">
+      <h2 id="analysis-heading">AI 分析</h2>
+      <button class="quiet-button" id="close-analysis" type="button">关闭</button>
+    </div>
+    <div class="sources-content">
+      <h3 id="analysis-title"></h3>
+      <p id="analysis-source"></p>
+      <label for="analysis-provider">模型</label>
+      <select id="analysis-provider"></select>
+      <p id="analysis-note" class="source-note"></p>
+      <p id="analysis-text"></p>
+      <div class="story-actions">
+        <a id="analysis-open" target="_blank" rel="noopener noreferrer"></a>
+        <button class="text-button" id="analysis-copy" type="button">复制分析提问</button>
+      </div>
+      <textarea id="analysis-prompt" rows="6" hidden readonly aria-label="分析提问"></textarea>
+    </div>
+  </dialog>
   <dialog id="sources-dialog" aria-labelledby="sources-heading">
     <div class="dialog-top"><h2 id="sources-heading">媒体与更新状态</h2><button class="quiet-button" id="close-sources" type="button">关闭</button></div>
     <div class="sources-content">
-      <p class="source-note">香港时间每逢整点和半点计划抓取。手动刷新检查本站已发布的最新一期，每 30 分钟可使用一次。英文标题和摘要默认显示原文，可选择 Google 翻译。可读全文仅收录有转载许可的文章。</p>
+      <p class="source-note">香港时间每逢整点和半点计划抓取。手动刷新检查本站已发布的最新一期，每 30 分钟可使用一次。外文报道默认显示原文，可选择浏览器翻译。简繁体中文直接保留原文。可读全文仅收录有转载许可的文章。</p>
       <div id="sources-list"></div>
     </div>
   </dialog>
